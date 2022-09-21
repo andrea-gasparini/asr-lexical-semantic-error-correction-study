@@ -1,0 +1,17 @@
+.idea
+
+__pycache__
+
+esc/
+kenlm/
+
+data/*
+data/librispeech/*
+!data/librispeech/
+!data/librispeech/*.xml
+
+models/*
+models/ngrams/*
+!models/ngrams/
+
+!.gitkeep
