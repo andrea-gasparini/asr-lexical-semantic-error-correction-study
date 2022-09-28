@@ -1,4 +1,6 @@
 from functools import cache
+import os
+from pathlib import Path
 from typing import List
 from xml.etree import ElementTree as ET
 import nltk
@@ -62,3 +64,17 @@ def get_num_lines(file_name: str) -> int:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
 
     return count
+
+
+def stem_basename_suffix(path: str) -> str:
+
+    stemmed_path = Path(path).stem
+
+    if path == stemmed_path:
+        return path
+
+    return stem_basename_suffix(stemmed_path)
+
+
+def get_basename(path: str) -> str:
+    return os.path.basename(os.path.normpath(path))

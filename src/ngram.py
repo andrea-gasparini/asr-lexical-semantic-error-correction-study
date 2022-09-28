@@ -4,7 +4,7 @@ import argparse
 from tqdm import tqdm
 from constants import *
 
-from utils import get_num_lines
+from utils import get_basename, get_num_lines, stem_basename_suffix
 
 
 def extract_wsd_labels(sense_ids_file_path: str, jsonl_wsd_dataset_path: str) -> None:
@@ -41,7 +41,7 @@ def extract_wsd_labels(sense_ids_file_path: str, jsonl_wsd_dataset_path: str) ->
                     file.write(f"{joined_sense_ids}\n")
 
 
-def postprocess_ngram(ngram_path: str, ngram_size: int) -> None:
+def postprocess_ngram(ngram_path: str, ngram_size: int) -> str:
     """
     Post-processes the .arpa n-gram file of size `ngram_size` from the directory `ngram_path`.
 
@@ -51,11 +51,15 @@ def postprocess_ngram(ngram_path: str, ngram_size: int) -> None:
 
     We simply add the end-of-sentence token by adding the line "0 </s> $begin_of_sentence_score" below the <s> token
     and increasing the n-gram 1 count by 1.
+
+    Returns:
+        the path to the newly created .arpa n-gram file
     """
 
     file_prefix = f"{ngram_path}{ngram_size}gram"
+    postprocessed_file_path = f"{file_prefix}_hf.arpa"
 
-    with open(f"{file_prefix}.arpa", "r") as read_file, open(f"{file_prefix}_hf.arpa", "w") as write_file:
+    with open(f"{file_prefix}.arpa", "r") as read_file, open(postprocessed_file_path, "w") as write_file:
 
         has_added_eos = False
 
@@ -73,14 +77,30 @@ def postprocess_ngram(ngram_path: str, ngram_size: int) -> None:
             else:
                 write_file.write(line)
 
+    return postprocessed_file_path
+
+
+def build_ngram(kenlm_bin_path: str, ngram_size: int, ngram_file_path: str, sense_ids_file_path: str) -> None:
+
+    os.system(f"{kenlm_bin_path}lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
+
+
+def build_binary_ngram(kenlm_bin_path: str, ngram_file_path: str) -> None:
+
+    ngram_path = os.path.dirname(ngram_file_path)
+    binary_ngram_file_name = f"{stem_basename_suffix(ngram_file_path)}.binary"
+    os.system(f"{kenlm_bin_path}build_binary -T /tmp {ngram_file_path} {ngram_path}/{binary_ngram_file_name}")
+
 
 def parse_args() -> argparse.Namespace:
+
     parser = argparse.ArgumentParser("KenLM WSD n-gram generator for 🤗 Transformers")
     # required
     parser.add_argument("--wsd-dataset-path", type=str, required=True)
     # default + not required
     parser.add_argument("--ngram-path", type=str, default=NGRAM_PATH)
-    parser.add_argument("--ngram-size", type=int, default=NGRAM_SIZE)
+    parser.add_argument("-s", "--ngram-size", type=int, default=NGRAM_SIZE)
+    parser.add_argument("-b", "--binary", action="store_true")
 
     return parser.parse_args()
 
@@ -90,8 +110,9 @@ def main() -> None:
     args = parse_args()
 
     ngram_size = args.ngram_size
-    ngram_file_path = f"{args.ngram_path}{ngram_size}gram.arpa"
-    sense_ids_file_path = f"{args.ngram_path}{SENSE_IDS_FILENAME}"
+    ngram_path = args.ngram_path
+    ngram_file_path = f"{ngram_path}{ngram_size}gram.arpa"
+    sense_ids_file_path = f"{ngram_path}{SENSE_IDS_FILENAME}"
 
     if not os.path.isdir(KENLM_BIN_PATH):
         os.system("bash setup_kenlm.sh")
@@ -100,13 +121,21 @@ def main() -> None:
 
     extract_wsd_labels(sense_ids_file_path=sense_ids_file_path, jsonl_wsd_dataset_path=args.wsd_dataset_path)
 
-    os.system(f"{KENLM_BIN_PATH}lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
+    build_ngram(KENLM_BIN_PATH, ngram_size, ngram_file_path, sense_ids_file_path)
 
     os.remove(sense_ids_file_path)
 
+    if (args.binary):
+        print(f"=== Building binary n-gram from {get_basename(ngram_file_path)} ===")
+        build_binary_ngram(KENLM_BIN_PATH, ngram_file_path)
+
     print("=== Fixing KenLM format as expected in 🤗 Transformers ===")
 
-    postprocess_ngram(ngram_path=args.ngram_path, ngram_size=ngram_size)
+    hf_ngram_file_path = postprocess_ngram(ngram_path=ngram_path, ngram_size=ngram_size)
+
+    if (args.binary):
+        print(f"=== Building binary n-gram from {get_basename(hf_ngram_file_path)} ===")
+        build_binary_ngram(KENLM_BIN_PATH, hf_ngram_file_path)
 
 
 if __name__ == "__main__":
