@@ -10,14 +10,13 @@ import datasets
 from datasets import load_dataset
 
 from utils import synsets_from_lemmapos, pos_map
-
-ROOT_DIR = "/media/andrea/512Gb/tesi/"
+from constants import *
 
 def main() -> None:
 
-    ls_test_other = datasets.Dataset.load_from_disk(f"{ROOT_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
+    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
                                                     f"-test_other_predictions")
-    ls_test_clean = datasets.Dataset.load_from_disk(f"{ROOT_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
+    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
                                                     f"-test_clean_predictions")
     ls_test_all = datasets.concatenate_datasets([ls_test_clean, ls_test_other])
 
@@ -93,12 +92,12 @@ def main() -> None:
 
         # print(ET.dump(tree))
 
-        tree.write(f"{ROOT_DIR}data/librispeech/{dataset_name}.data.xml", encoding="UTF-8", xml_declaration=True)
+        tree.write(f"{DATA_DIR}librispeech/{dataset_name}.data.xml", encoding="UTF-8", xml_declaration=True)
 
 
 if __name__ == "__main__":
 
     main()
 
-    # ls_test_other = datasets.Dataset.load_from_disk(f"{ROOT_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
+    # ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
     #                                                 f"-test_other_predictions")

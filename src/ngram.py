@@ -2,14 +2,9 @@ import json
 import os
 import argparse
 from tqdm import tqdm
+from constants import *
 
 from utils import get_num_lines
-
-
-NGRAM_SIZE: int = 4
-NGRAM_PATH: str = "../models/ngrams/"
-KENLM_BIN_PATH: str = "kenlm/build/bin"
-SENSE_IDS_FILENAME: str = "sense_ids.txt"
 
 
 def extract_wsd_labels(sense_ids_file_path: str, jsonl_wsd_dataset_path: str) -> None:
@@ -105,7 +100,7 @@ def main() -> None:
 
     extract_wsd_labels(sense_ids_file_path=sense_ids_file_path, jsonl_wsd_dataset_path=args.wsd_dataset_path)
 
-    os.system(f"{KENLM_BIN_PATH}/lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
+    os.system(f"{KENLM_BIN_PATH}lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
 
     os.remove(sense_ids_file_path)
 
