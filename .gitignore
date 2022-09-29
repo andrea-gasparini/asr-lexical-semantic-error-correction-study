@@ -10,6 +10,8 @@ data/*
 data/librispeech/*
 !data/librispeech/
 !data/librispeech/*.xml
+!data/librispeech/*.txt
+!data/librispeech/*.json
 
 models/*
 models/ngrams/*
