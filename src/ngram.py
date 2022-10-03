@@ -1,6 +1,7 @@
 import json
 import os
 import argparse
+from typing import List
 from tqdm import tqdm
 from constants import *
 
@@ -35,8 +36,10 @@ def extract_wsd_labels(sense_ids_file_path: str, jsonl_wsd_dataset_path: str) ->
 
                     assert "labels" in jsonl_sample, f"Sample does not have a valid 'labels' key"
 
-                    sense_ids = jsonl_sample["labels"]
-                    joined_sense_ids = " ".join([sense_id[0] for sense_id in sense_ids])
+                    labels: List[str] = [sense_id[0] for sense_id in jsonl_sample["labels"]]
+                    # remove lemma and POS from the id (only keeping "bn:{offset}{wn_pos}")
+                    sense_ids = [label.split("#")[0] for label in labels]
+                    joined_sense_ids = " ".join(sense_ids)
 
                     file.write(f"{joined_sense_ids}\n")
 
