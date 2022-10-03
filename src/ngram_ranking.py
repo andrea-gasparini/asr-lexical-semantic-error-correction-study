@@ -6,37 +6,37 @@ from xml.etree import ElementTree as ET
 import kenlm
 
 from constants import *
-from utils import stem_basename_suffix, get_basename
+from utils import SenseInventory, stem_basename_suffix
 
 
-def read_wsd_gold_keys(txt_path: str) -> Dict[str, str]:
+def read_wsd_keys(txt_path: str) -> Dict[str, str]:
     """
-    Reads the gold keys of a WSD corpus from a txt file
-    and parses it into a dictionary that goes from tokens ids to wordnet sense ids.
+    Reads the keys of a WSD corpus from a txt file
+    and parses it into a dictionary that goes from tokens ids to wordnet lemma keys.
 
     Args:
-        txt_path: gold keys file
+        txt_path: keys file
 
-    Returns: tokens ids to wordnet sense ids dictionary
+    Returns: tokens ids to wordnet lemma keys dictionary
     """
     if not os.path.isfile(txt_path):
-        raise ValueError(f"{txt_path} is not a valid txt gold keys file")
+        raise ValueError(f"{txt_path} is not a valid txt keys file")
 
     with open(txt_path) as f:
-        gold_keys = [line.strip().split(" ") for line in f]
+        lines = [line.strip().split(" ") for line in f]
 
-    sense_ids_dict = dict()
-    for gold_key in gold_keys:
-        if len(gold_key) > 1:
-            token_id = gold_key[0]
-            sense_id = gold_key[1]  # ignore eventual secondary senses ([2:])
-            sense_ids_dict[token_id] = sense_id
+    lemma_keys_dict = dict()
+    for line in lines:
+        if len(line) > 1:
+            token_id = line[0]
+            lemma_key = line[1]  # ignore eventual secondary senses ([2:])
+            lemma_keys_dict[token_id] = lemma_key
         else:
             # TODO: implement logger
             # print(f"Token {token_id} does not have a prediction in {get_basename(txt_path)}")
             pass
 
-    return sense_ids_dict
+    return lemma_keys_dict
 
 
 def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str, ngram_size: int,
@@ -49,7 +49,7 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
     if not os.path.isfile(xml_data_path):
         raise ValueError(f"{xml_data_path} is not a valid xml data file")
 
-    sense_ids_dict = read_wsd_gold_keys(txt_gold_keys_path)
+    lemma_keys_dict = read_wsd_keys(txt_gold_keys_path)
 
     if not os.path.isfile(ngram_model_path):
         raise ValueError(f"{ngram_model_path} is not a valid arpa ngram file")
@@ -59,6 +59,8 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
     corpus = ET.parse(xml_data_path)
 
     samples = dict()
+
+    inventory = SenseInventory()
 
     # iterate over <sentence> tags from the given xml file
     for sent_i, sent_xml in enumerate(corpus.iter("sentence")):
@@ -73,12 +75,13 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
             "sense_indices": list(),
             "wsd_lm_scores": list(),
             "esc_predictions": list(),
+            "bn_esc_predictions": list(),
             "lm_probability": float(sent_xml.attrib.get("lm_probability")),
             "logit_probability": float(sent_xml.attrib.get("logit_probability"))
         }
         samples[sentence_id].append(sample)
 
-        sense_ids: List[str] = list()
+        bn_sense_ids: List[str] = list()
         # for each inner xml token (either <instance> or <wf>)
         for token_i, token_xml in enumerate(sent_xml):
 
@@ -91,25 +94,23 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
                 sample["sense_indices"].append(token_i)
 
                 token_id = token_xml.attrib.get("id")
-                sense_id = sense_ids_dict.get(token_id, None)
+                lemma_key = lemma_keys_dict.get(token_id, None)
+                bn_sense_id = inventory.lemma_key_to_bn_id(lemma_key)
 
-                if sense_id is not None:
+                if lemma_key is not None:
 
-                    sense_ids.append(sense_id)
+                    bn_sense_ids.append(bn_sense_id)
                     # take into consideration only the last `ngram_size` sense ids
-                    sense_ids_window = sense_ids[-ngram_size:]
-                    score = model.score(" ".join(sense_ids_window))
+                    bn_sense_ids_window = bn_sense_ids # bn_sense_ids[-ngram_size:]
+                    score = model.score(" ".join(bn_sense_ids_window))
 
-                    token_xml.set("esc_prediction", sense_id)
                     token_xml.set("wsd_lm_score", str(score))
+                    token_xml.set("esc_prediction", lemma_key)
+                    token_xml.set("bn_esc_prediction", bn_sense_id)
 
                     sample["wsd_lm_scores"].append(score)
-                    sample["esc_predictions"].append(sense_id)
-
-                else:
-
-                    sample["wsd_lm_scores"].append(None)
-                    sample["esc_predictions"].append(None)
+                    sample["esc_predictions"].append(lemma_key)
+                    sample["bn_esc_predictions"].append(bn_sense_id)
 
     scored_dataset_path = f"{os.path.dirname(xml_data_path)}/{stem_basename_suffix(xml_data_path)}_ranked"
 
@@ -124,6 +125,6 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
                     
 if __name__ == "__main__":
 
-    score_raganato_dataset("../data/librispeech/librispeech_test_all.data.xml",
-                           "../data/librispeech/librispeech_test_all.silver.key.txt",
-                           "../models/ngrams/4gram.binary", 4)
+    score_raganato_dataset(f"{DATA_DIR}librispeech/librispeech_test_all.data.xml",
+                           f"{DATA_DIR}librispeech/librispeech_test_all.silver.key.txt",
+                           f"{NGRAM_PATH}4gram.binary", 4)
