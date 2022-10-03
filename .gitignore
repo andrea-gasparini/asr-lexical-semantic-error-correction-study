@@ -3,7 +3,6 @@
 .ipynb_checkpoints
 __pycache__
 
-esc/
 kenlm/
 
 data/*
@@ -12,6 +11,8 @@ data/librispeech/*
 !data/librispeech/*.xml
 !data/librispeech/*.txt
 !data/librispeech/*.json
+!data/wn_bn5.tsv
+!data/sense_key2wn_id.tsv
 
 models/*
 models/ngrams/*
