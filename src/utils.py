@@ -1,11 +1,13 @@
 from functools import cache
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from xml.etree import ElementTree as ET
 import nltk
 from nltk.corpus import wordnet
 from nltk.corpus.reader import Synset
+
+from constants import LEMMA2IDS_FILE_PATH, WN2BN_IDS_FILE_PATH
 
 nltk.download("wordnet")
 
@@ -48,7 +50,7 @@ def synsets_from_lemmapos(lemma: str, pos: str) -> List[Synset]:
 
 def get_num_lines(file_name: str) -> int:
     """
-    Efficiently computes the total number of lines contained in an ascii file.
+    Efficiently pre-computes the total number of lines contained in an ascii file.
 
     Source:
         https://stackoverflow.com/questions/845058/how-to-get-line-count-of-a-large-file-cheaply-in-python/68385697#68385697
@@ -78,3 +80,34 @@ def stem_basename_suffix(path: str) -> str:
 
 def get_basename(path: str) -> str:
     return os.path.basename(os.path.normpath(path))
+
+
+# TODO: move in another module
+# TODO: implement Singleton pattern
+class SenseInventory:
+
+    def __init__(self, lemma2ids_file_path: str = LEMMA2IDS_FILE_PATH,
+                 wn2bn_ids_file_path: str = WN2BN_IDS_FILE_PATH) -> None:
+
+        self.__lemma_keys_to_wn_ids = dict()
+
+        with open(lemma2ids_file_path) as f:
+            for line in f:
+                lemma_key, wn_pos_offset = line.split()
+                self.__lemma_keys_to_wn_ids[lemma_key] = f"wn:{wn_pos_offset}"
+
+        self.__wn_to_bn_ids = dict()
+
+        with open(wn2bn_ids_file_path) as f:
+            for line in f:
+                wn_id, bn_id = line.split()
+                self.__wn_to_bn_ids[wn_id] = bn_id
+
+    def lemma_key_to_wn_id(self, lemma_key: str) -> Optional[str]:
+        return self.__lemma_keys_to_wn_ids.get(lemma_key, None)
+
+    def lemma_key_to_bn_id(self, lemma_key: str) -> Optional[str]:
+        return self.wn_id_to_bn(self.lemma_key_to_wn_id(lemma_key))
+
+    def wn_id_to_bn(self, wn_id: str) -> Optional[str]:
+        return self.__wn_to_bn_ids.get(wn_id, None)
