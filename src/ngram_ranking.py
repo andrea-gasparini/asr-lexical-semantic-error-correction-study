@@ -104,7 +104,7 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
                     bn_sense_ids_window = bn_sense_ids # bn_sense_ids[-ngram_size:]
                     score = model.score(" ".join(bn_sense_ids_window))
 
-                    token_xml.set("wsd_lm_score", str(score))
+                    token_xml.set("wsd_lm_scores", str(score))
                     token_xml.set("esc_prediction", lemma_key)
                     token_xml.set("bn_esc_prediction", bn_sense_id)
 

@@ -2,6 +2,7 @@ torch
 pytorch-lightning
 stanza
 nltk
+jiwer
 librosa
 soundfile
 transformers

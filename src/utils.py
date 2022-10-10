@@ -1,7 +1,7 @@
 from functools import cache
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from xml.etree import ElementTree as ET
 import nltk
 from nltk.corpus import wordnet
@@ -80,6 +80,14 @@ def stem_basename_suffix(path: str) -> str:
 
 def get_basename(path: str) -> str:
     return os.path.basename(os.path.normpath(path))
+
+
+def dict_to_list(dict_of_lists: Dict[str, List]) -> List[Dict]:
+    return [dict(zip(dict_of_lists, t)) for t in zip(*dict_of_lists.values())]
+
+
+def list_to_dict(list_of_dicts: List[Dict]) -> Dict[str, List]:
+    return {k: [dic[k] for dic in list_of_dicts] for k in list_of_dicts[0]}
 
 
 # TODO: move in another module
