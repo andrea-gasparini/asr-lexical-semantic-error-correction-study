@@ -1,5 +1,6 @@
+import os
 from functools import cache
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import nltk
 from nltk.corpus import wordnet
@@ -45,6 +46,36 @@ def download_wordnet_resources() -> None:
 @cache
 def synsets_from_lemmapos(lemma: str, pos: str) -> List[Synset]:
     return wordnet.synsets(lemma, pos)
+
+
+def read_wsd_keys(txt_keys_path: str) -> Dict[str, str]:
+    """
+    Reads the keys of a WSD corpus from a txt file (following Raganato's format)
+    and parses it into a dictionary that goes from tokens ids to wordnet lemma keys.
+
+    Args:
+        txt_keys_path: txt keys file
+
+    Returns: tokens ids to wordnet lemma keys dictionary
+    """
+    if not os.path.isfile(txt_keys_path):
+        raise ValueError(f"{txt_keys_path} is not a valid txt keys file")
+
+    with open(txt_keys_path) as f:
+        lines = [line.strip().split(" ") for line in f]
+
+    lemma_keys_dict = dict()
+    for line in lines:
+        if len(line) > 1:
+            token_id = line[0]
+            lemma_key = line[1]  # ignore eventual secondary senses ([2:])
+            lemma_keys_dict[token_id] = lemma_key
+        else:
+            # TODO: implement logger
+            # print(f"Token {token_id} does not have a prediction in {get_basename(txt_keys_path)}")
+            pass
+
+    return lemma_keys_dict
 
 
 # TODO: implement Singleton pattern

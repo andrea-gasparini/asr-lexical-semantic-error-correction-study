@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 
 
 def get_num_lines(file_name: str) -> int:
@@ -20,6 +21,16 @@ def get_num_lines(file_name: str) -> int:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
 
     return count
+
+
+def ext_is_in_dir(extension: str, dir_to_list: str, mode: Literal["any", "all"] = "any") -> bool:
+    """Checks that the files in the given directory have the given extension."""
+    if mode == "any":
+        return any([el.endswith(extension) for el in os.listdir(dir_to_list)])
+    elif mode == "all":
+        return all([el.endswith(extension) for el in os.listdir(dir_to_list)])
+    else:
+        raise ValueError(f"mode {mode} not supported")
 
 
 def stem_basename_suffix(path: str) -> str:

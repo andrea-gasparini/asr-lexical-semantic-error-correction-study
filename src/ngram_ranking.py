@@ -3,40 +3,10 @@ import json
 import os
 from typing import Dict, List, Literal
 from xml.etree import ElementTree as ET
+
 import kenlm
-
-from constants import *
 from utils import SenseInventory, stem_basename_suffix
-
-
-def read_wsd_keys(txt_path: str) -> Dict[str, str]:
-    """
-    Reads the keys of a WSD corpus from a txt file
-    and parses it into a dictionary that goes from tokens ids to wordnet lemma keys.
-
-    Args:
-        txt_path: keys file
-
-    Returns: tokens ids to wordnet lemma keys dictionary
-    """
-    if not os.path.isfile(txt_path):
-        raise ValueError(f"{txt_path} is not a valid txt keys file")
-
-    with open(txt_path) as f:
-        lines = [line.strip().split(" ") for line in f]
-
-    lemma_keys_dict = dict()
-    for line in lines:
-        if len(line) > 1:
-            token_id = line[0]
-            lemma_key = line[1]  # ignore eventual secondary senses ([2:])
-            lemma_keys_dict[token_id] = lemma_key
-        else:
-            # TODO: implement logger
-            # print(f"Token {token_id} does not have a prediction in {get_basename(txt_path)}")
-            pass
-
-    return lemma_keys_dict
+from utils.wsd import read_wsd_keys
 
 
 def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str, ngram_size: int,
