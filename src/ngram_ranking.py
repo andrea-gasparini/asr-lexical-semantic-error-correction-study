@@ -122,9 +122,25 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
         with open(f"{scored_dataset_path}.json", "w") as f:
             json.dump(samples, f, indent=2)
 
-                    
-if __name__ == "__main__":
 
-    score_raganato_dataset(f"{DATA_DIR}librispeech/librispeech_test_all.data.xml",
-                           f"{DATA_DIR}librispeech/librispeech_test_all.silver.key.txt",
-                           f"{NGRAM_PATH}4gram.binary", 4)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    # required
+    parser.add_argument("--wsd-dataset-path", type=str, required=True)
+    parser.add_argument("--wsd-labels-path", type=str, required=True)
+    parser.add_argument("--ngram-model-path", type=str, required=True)
+    # default + not required
+    parser.add_argument("--dump-type", type=str, default="all")
+
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    score_raganato_dataset(xml_data_path=args.wsd_dataset_path, txt_gold_keys_path=args.wsd_labels_path,
+                           ngram_model_path=args.ngram_model_path, dump_type=args.dump_type)
+
+
+if __name__ == "__main__":
+    main()
