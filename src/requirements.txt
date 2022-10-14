@@ -12,4 +12,5 @@ pyctcdecode
 streamlit
 jupyter
 notebook
+wandb
 kenlm @ https://github.com/kpu/kenlm/archive/master.zip
