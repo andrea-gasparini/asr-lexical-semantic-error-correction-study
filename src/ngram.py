@@ -124,11 +124,19 @@ def postprocess_ngram(ngram_path: str, ngram_size: int) -> str:
     return postprocessed_file_path
 
 
-def build_ngram(kenlm_bin_path: str, ngram_size: int, ngram_file_path: str, sense_ids_file_path: str) -> None:
+def check_kenlm_setup(kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
+    if not os.path.isdir(kenlm_bin_path):
+        os.system(f"bash {KENLM_SETUP_SCRIPT_PATH}")
+
+
+def build_ngram(ngram_size: int, ngram_file_path: str, sense_ids_file_path: str,
+                kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
+    check_kenlm_setup(kenlm_bin_path)
     os.system(f"{kenlm_bin_path}lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
 
 
-def build_binary_ngram(kenlm_bin_path: str, ngram_file_path: str) -> None:
+def build_binary_ngram(ngram_file_path: str, kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
+    check_kenlm_setup(kenlm_bin_path)
     ngram_path = os.path.dirname(ngram_file_path)
     binary_ngram_file_name = f"{stem_basename_suffix(ngram_file_path)}.binary"
     os.system(f"{kenlm_bin_path}build_binary -T /tmp {ngram_file_path} {ngram_path}/{binary_ngram_file_name}")
@@ -154,8 +162,7 @@ def main() -> None:
     ngram_file_path = f"{ngram_path}{ngram_size}gram.arpa"
     sense_ids_file_path = f"{ngram_path}{SENSE_IDS_FILENAME}"
 
-    if not os.path.isdir(KENLM_BIN_PATH):
-        os.system("bash setup_kenlm.sh")
+    check_kenlm_setup()
 
     print("=== Extracting WSD labels from the datasets ===")
 
@@ -174,13 +181,13 @@ def main() -> None:
         else:
             raise ValueError(f"{dataset_path} is not a valid directory to a Raganato or jsonl WSD dataset")
 
-    build_ngram(KENLM_BIN_PATH, ngram_size, ngram_file_path, sense_ids_file_path)
+    build_ngram(ngram_size, ngram_file_path, sense_ids_file_path)
 
     os.remove(sense_ids_file_path)
 
     if args.binary:
         print(f"=== Building binary n-gram from {get_basename(ngram_file_path)} ===")
-        build_binary_ngram(KENLM_BIN_PATH, ngram_file_path)
+        build_binary_ngram(ngram_file_path)
 
     print("=== Fixing KenLM format as expected in 🤗 Transformers ===")
 
@@ -188,7 +195,7 @@ def main() -> None:
 
     if args.binary:
         print(f"=== Building binary n-gram from {get_basename(hf_ngram_file_path)} ===")
-        build_binary_ngram(KENLM_BIN_PATH, hf_ngram_file_path)
+        build_binary_ngram(hf_ngram_file_path)
 
 
 if __name__ == "__main__":
