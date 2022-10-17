@@ -6,11 +6,11 @@ __pycache__
 kenlm/
 
 data/*
-data/librispeech/*
-!data/librispeech/
-!data/librispeech/*.xml
-!data/librispeech/*.txt
-!data/librispeech/*.json
+data/predictions/*
+!data/predictions/
+!data/predictions/*.xml
+!data/predictions/*.txt
+!data/predictions/*.json
 !data/wn_bn5.tsv
 !data/sense_key2wn_id.tsv
 
