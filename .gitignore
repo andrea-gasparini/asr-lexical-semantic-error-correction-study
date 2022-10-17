@@ -3,7 +3,6 @@
 .ipynb_checkpoints
 __pycache__
 
-kenlm/
 
 data/*
 data/predictions/*

@@ -1,0 +1,6 @@
+[submodule "kenlm"]
+	path = kenlm
+	url = git@github.com:kpu/kenlm.git
+[submodule "esc"]
+	path = esc
+	url = git@github.com:SapienzaNLP/esc.git
