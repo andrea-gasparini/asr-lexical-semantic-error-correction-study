@@ -1,23 +1,27 @@
-import json
-from textwrap import indent
+import argparse
 from xml.etree import ElementTree as ET
+
+import datasets
+import stanza
 from tqdm import tqdm
 
-import nltk
-from nltk.corpus import wordnet
-import stanza
-import datasets
-from datasets import load_dataset
-
-from utils import synsets_from_lemmapos, pos_map
 from constants import *
+from utils import synsets_from_lemmapos, pos_map
 
-def main() -> None:
 
-    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
-                                                    f"-test_other_predictions")
-    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
-                                                    f"-test_clean_predictions")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    # required
+    parser.add_argument("-m", "--model-name", type=str, required=True)
+    # default + not required
+    parser.add_argument("-p", "--predictions-path", type=str, default=f"{DATA_DIR}predictions/")
+
+    return parser.parse_args()
+
+
+def main(predictions_dir: str, model_name: str) -> None:
+    ls_test_other = datasets.Dataset.load_from_disk(f"{predictions_dir}{model_name}-test_other")
+    ls_test_clean = datasets.Dataset.load_from_disk(f"{predictions_dir}{model_name}-test_clean")
     ls_test_all = datasets.concatenate_datasets([ls_test_clean, ls_test_other])
 
     ls_test_clean = ls_test_clean.sort(column="chapter_id")
@@ -30,7 +34,11 @@ def main() -> None:
                                   ("librispeech_test_clean", ls_test_clean),
                                   ("librispeech_test_all", ls_test_all)]:
 
-        corpus = ET.Element("corpus", attrib={"lang": "en", "source": dataset_name})
+        assert "candidates" in dataset[0], f'Predictions of model "{model_name}" are not valid ' \
+                                           f'since they do not contain a "candidates" key. ' \
+                                           f'Make sure they have been generated correctly by a beam search.'
+
+        corpus = ET.Element("corpus", attrib={"lang": "en", "source": f"{dataset_name} + {model_name}"})
 
         pbar = tqdm(total=len(dataset))
         pbar.set_description("Processing %s" % dataset_name)
@@ -49,7 +57,7 @@ def main() -> None:
                 text_id = f"d{text_cnt:03d}"
                 text = ET.SubElement(corpus, "text", attrib={"id": text_id, "chapter_id": str(chapter_id)})
 
-            for t_i, transcription in enumerate(sample["transcription"]):
+            for t_i, transcription in enumerate(sample["candidates"]):
 
                 transcription_id = f"{text_id}.s{sentence_cnt:03d}"
 
@@ -64,14 +72,15 @@ def main() -> None:
 
                 tokenization = tagging_pipeline.process(transcription)
 
-                assert len(tokenization.sentences) == 1, f"Transcription {transcription_id} is splitted in more than 1 sentence by stanza pipeline, we're losing information!!!"
+                assert len(tokenization.sentences) == 1, f"Transcription {transcription_id} is splitted in more than" \
+                                                         f" 1 sentence by stanza pipeline, we're losing information!!!"
 
                 instance_cnt = 0
 
                 for token in tokenization.sentences[0].words:
 
                     pos, lemma = token.upos, token.lemma
-                    attributes = { "pos": pos }
+                    attributes = {"pos": pos}
 
                     if lemma is not None:
                         attributes["lemma"] = lemma
@@ -90,14 +99,11 @@ def main() -> None:
         tree = ET.ElementTree(corpus)
         ET.indent(tree, space="", level=0)
 
-        # print(ET.dump(tree))
-
-        tree.write(f"{DATA_DIR}librispeech/{dataset_name}.data.xml", encoding="UTF-8", xml_declaration=True)
+        dump_file_name = f"{predictions_dir}{model_name}-{dataset_name}.data.xml"
+        tree.write(dump_file_name, encoding="UTF-8", xml_declaration=True)
 
 
 if __name__ == "__main__":
+    args = parse_args()
 
-    main()
-
-    # ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/wav2vec2-large-960h-lv60-self-4-gram"
-    #                                                 f"-test_other_predictions")
+    main(args.predictions_path, args.model_name)
