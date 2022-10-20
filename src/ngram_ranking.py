@@ -23,8 +23,8 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
 
     if not os.path.isfile(ngram_model_path):
         raise ValueError(f"{ngram_model_path} is not a valid arpa ngram file")
-    
-    model = kenlm.LanguageModel(ngram_model_path)
+
+    language_model = kenlm.LanguageModel(ngram_model_path)
 
     corpus = ET.parse(xml_data_path)
 
@@ -33,7 +33,7 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
     inventory = SenseInventory()
 
     # iterate over <sentence> tags from the given xml file
-    for sent_i, sent_xml in enumerate(corpus.iter("sentence")):
+    for sent_xml in corpus.iter("sentence"):
 
         sentence_id = sent_xml.attrib.get("sentence_id")
         if sentence_id not in samples:
@@ -72,14 +72,14 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
 
                     bn_sense_ids.append(bn_sense_id)
                     # take into consideration only the last `ngram_size` sense ids
-                    bn_sense_ids_window = bn_sense_ids # bn_sense_ids[-ngram_size:]
-                    score = model.score(" ".join(bn_sense_ids_window))
+                    # bn_sense_ids_window = bn_sense_ids[-ngram_size:]
+                    lm_score = language_model.score(" ".join(bn_sense_ids))
 
-                    token_xml.set("wsd_lm_scores", str(score))
+                    token_xml.set("wsd_lm_scores", str(lm_score))
                     token_xml.set("esc_prediction", lemma_key)
                     token_xml.set("bn_esc_prediction", bn_sense_id)
 
-                    sample["wsd_lm_scores"].append(score)
+                    sample["wsd_lm_scores"].append(lm_score)
                     sample["esc_predictions"].append(lemma_key)
                     sample["bn_esc_predictions"].append(bn_sense_id)
 

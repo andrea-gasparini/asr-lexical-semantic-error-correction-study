@@ -40,7 +40,6 @@ def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
     }
 
     wandb.log(metrics)
-
     return metrics
 
 
@@ -146,14 +145,18 @@ def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]],
 
     for i, (k, v) in enumerate(ranked_samples.items()):
 
+        # skip samples w/ only one candidate transcription
         if len(v) == 1: continue
 
+        # skip samples w/ the picked transcription being the most probable for both LM and ASR models
         if not include_most_probable_candidates:
             p = [(float(vv["lm_probability"]), float(vv["logit_probability"])) for vv in v]
             max_probability_indices = torch.argmax(torch.tensor([[x[i] for x in p] for i in range(len(p[0]))]), dim=-1)
             if torch.all(torch.tensor([x == max_probability_indices[0] for x in max_probability_indices])):
                 continue
 
+        # take into consideration only samples w/ at least one candidate transcription
+        # containing different BabelNet identifiers w/ respect to the other candidates
         predictions = [vv["esc_predictions"] for vv in v]
         if not torch.all(torch.tensor([e == predictions[0] for e in predictions])):
             wsd_differences_samples[k] = v
@@ -162,15 +165,10 @@ def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]],
 
 
 if __name__ == "__main__":
-    print("=== Loading LibriSpeech test set ===")
-
-    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
-    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_clean")
-
-    print("Done!")
-
-    print("=== Loading ranked LibriSpeech test set ===")
-
+    # MODEL = "patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram"
+    MODEL = "patrickvonplaten/wav2vec2-base-960h-4-gram"
+    MODEL_NAME = MODEL.split("/")[1]
+    
     LANGUAGE_MODEL = {
         "type": "WSD Language Model (KenLM)",
         "ngram_size": 4,
@@ -182,13 +180,44 @@ if __name__ == "__main__":
     }
     
     INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
+    THRESHOLD = threshold = None
+    
+    SCORER = LANGUAGE_MODEL
+
+    BS_FILTERING = {
+        "criterion": "threshold" if THRESHOLD is not None else "argmin",
+        "threshold": THRESHOLD,
+        "keep_same_words": True,
+        "include_most_probable_candidates": INCLUDE_MOST_PROBABLE_CANDIDATES
+    }
+    
+    CONFIG = {
+        "model": MODEL,
+        "scorer": SCORER,
+        "decoding": "Beam search" if "gram" in MODEL else "Greedy search",
+        "beam_search_filtering_settings": BS_FILTERING if SCORER is not None else None
+    }
+    
+    # RUN_NAME=f"wav2vec2-large-self-lm-bs-thresholded-{THRESHOLD}-ksw-alltrainwsdlm"
+    # RUN_NAME=f"wav2vec2-large-self-lm-bs-argmin-ksw"
+    # RUN_NAME=f"wav2vec2-base-lm-bs-thresholded-{THRESHOLD}-ksw"
+    RUN_NAME=f"wav2vec2-base-lm-bs-argmin-ksw-impc"
+
+    print("=== Loading LibriSpeech test set ===")
+
+    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
+    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_clean")
+
+    print("Done!")
+
+    print("=== Loading ranked LibriSpeech test set ===")
 
     if "jsonl_wsd" in LANGUAGE_MODEL["train_corpora"]:
         if "SemCor" in LANGUAGE_MODEL["train_corpora"] and "OMSTI" in LANGUAGE_MODEL["train_corpora"]:
-            with open(f"{DATA_DIR}librispeech/librispeech_test_all_ranked_jsonl+semcor+omsti.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked_jsonl+semcor+omsti.json") as f:
                 samples = json.load(f)
         else:
-            with open(f"{DATA_DIR}librispeech/librispeech_test_all_ranked_jsonl.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked_jsonl.json") as f:
                 samples = json.load(f)
 
     wsd_samples = get_wsd_differences_samples(samples, INCLUDE_MOST_PROBABLE_CANDIDATES)
@@ -197,8 +226,6 @@ if __name__ == "__main__":
 
     print("=== Loading pre-trained Wav2Vec 2.0 model ===")
 
-    # MODEL = "patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram"
-    MODEL = "patrickvonplaten/wav2vec2-base-960h-4-gram"
     model_ngram, processor_ngram = load_pretrained_model(MODELS_DIR, MODEL)
     # model, processor = load_pretrained_model(MODELS_DIR, "facebook/wav2vec2-base-960h")
     # wsdmodel = Wav2Vec2WithWSD(model, processor, f"{MODELS_DIR}ngrams/librispeech/4-gram")
@@ -213,7 +240,10 @@ if __name__ == "__main__":
     # map_function = wsdmodel.beam_search
 
     # base_save_path = f"{DATA_DIR}predictions/filtered_beam_search_thresholded_{THRESHOLD}_nosamewords"
-    base_save_path = f"{DATA_DIR}predictions/wav2vec2-base-960h-4-gram"
+    if threshold is not None:
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_thresholded_{THRESHOLD}_nosamewords_impc"
+    else:
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_argmin_nosamewords_impc"
 
     predictions = dict()
     predictions["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
@@ -224,25 +254,7 @@ if __name__ == "__main__":
 
     print("=== Storing results on Weights & Biases ===")
 
-    SCORER = LANGUAGE_MODEL
-
-    BS_FILTERING = {
-        "criterion": "threshold" if THRESHOLD is not None else "argmin",
-        "threshold": THRESHOLD,
-        "keep_same_words": True,
-        "include_most_probable_candidates": INCLUDE_MOST_PROBABLE_CANDIDATES
-    }
-
-    config = {
-        "model": MODEL,
-        "scorer": SCORER,
-        "decoding": "Beam search" if "gram" in MODEL else "Greedy search",
-        "beam_search_filtering_settings": BS_FILTERING if SCORER is not None else None
-    }
-
-    log_on_wandb(config=config, predictions=predictions,
-                 # run_name=f"wav2vec2-large-self-lm-bs-thresholded-{THRESHOLD}-ksw-alltrainwsdlm")
-                 run_name=f"wav2vec2-base-lm-bs-thresholded-{THRESHOLD}-ksw")
+    log_on_wandb(config=CONFIG, predictions=predictions, run_name=RUN_NAME)
 
     print("Done!")
     exit(0)
