@@ -40,6 +40,7 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
             samples[sentence_id] = list()
 
         sample = {
+            "transcription": sent_xml.attrib.get("transcription"),
             "tokens": list(),
             "senses": list(),
             "sense_indices": list(),

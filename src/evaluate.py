@@ -12,6 +12,7 @@ from jiwer import wer, wil
 from transformers import AutoModelForCTC, AutoProcessor, Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2ProcessorWithLM
 
 import wandb
+from pyctcdecode_local import BeamSearchDecoderCTC
 from constants import *
 from constants import DATA_DIR
 from utils import list_to_dict
@@ -104,28 +105,30 @@ def load_pretrained_model(local_dumps_dir: str, hf_model_url: str) \
     return model, processor
 
 
-# def filter_beam_search(threshold: int, wsd_samples: Dict, samples: Dict, hf_sample):
-def filter_beam_search(hf_sample):
+def forward(hf_sample):
     inputs = processor_ngram(hf_sample["audio"]["array"], sampling_rate=16_000, return_tensors="pt")
     inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
     with torch.no_grad():
         logits = model_ngram(**inputs).logits[0]
 
+    return logits
+
+
+def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_samples: Dict, samples: Dict, hf_sample):
     if hf_sample["id"] in wsd_samples:
 
-        from pyctcdecode_local import BeamSearchDecoderCTC
-        decoder = BeamSearchDecoderCTC.load_from_dir(f"{MODELS_DIR}wav2vec2-large-960h-lv60-self-4-gram")
-        beams_to_filer = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=THRESHOLD)
+        beams_to_filer = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
 
-        output_beams = decoder.decode_beams(logits.cpu().numpy(), beams_to_filter=beams_to_filer)
+        output_beams = decoder.decode_beams(forward(hf_sample).cpu().numpy(), beams_to_filter=beams_to_filer)
+        candidates = [x[0] for x in output_beams]
+        transcription = output_beams[0][0] if len(output_beams) > 0 else ""
 
     else:
 
-        output_beams = processor_ngram.decoder.decode_beams(logits.cpu().numpy())
-
-    candidates = [x[0] for x in output_beams]
-    transcription = output_beams[0][0] if len(output_beams) > 0 else ""
+        ranked_sample = list_to_dict(samples[hf_sample["id"]])
+        candidates = ranked_sample["transcription"]
+        transcription = candidates[0]
 
     hf_sample["candidates"] = candidates
     hf_sample["transcription"] = transcription
@@ -195,10 +198,10 @@ if __name__ == "__main__":
     print("Done!")
 
     print("=== Computing predictions and filtering beam search ===")
+    
+    decoder = BeamSearchDecoderCTC.load_from_dir(f"{MODELS_DIR}ngrams/librispeech/4-gram")
 
-    THRESHOLD = 0.75
-    map_function = filter_beam_search
-    # map_function = partial(filter_beam_search, THRESHOLD)  # , wsd_samples, samples)
+    map_function = partial(filter_beam_search, decoder, THRESHOLD, wsd_samples, samples)
     # map_function = wsdmodel.beam_search
 
     # base_save_path = f"{DATA_DIR}predictions/filtered_beam_search_thresholded_{THRESHOLD}_nosamewords"
