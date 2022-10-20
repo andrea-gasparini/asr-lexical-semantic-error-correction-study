@@ -44,41 +44,46 @@ def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
     return metrics
 
 
-def compute_beams_to_filter(sample: Dict, debug: bool = False, threshold: Optional[float] = None):
+def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
     indices = sample["sense_indices"]
     bn_predictions = sample["bn_esc_predictions"]
+    wsd_lm_scores = sample["wsd_lm_scores"]
+    tokens = sample["tokens"]
 
     # TODO: we're not considering sequences with less senses than the 1st one
 
     beams_to_filer = list()
 
-    for i, bn_id in enumerate(bn_predictions[0]):
+    for i, transcription_bn_id in enumerate(bn_predictions[0]):
+        tran_bn_id_idx = indices[0][i]
+        tran_tokens = tokens[0]
 
-        ll, l, indices_f, tokens = list(), list(), list(), list()
+        bn_ids_window = [transcription_bn_id]
+        wsd_lm_scores_window = [wsd_lm_scores[0][i]]
+        indices_window = [indices[0]]
+        tokens_window = [tokens[0]]
 
-        for ii, ids in enumerate(bn_predictions):
-            if len(ids) > i and indices[0][i] == indices[ii][i] and sample["tokens"][0][indices[0][i]] != \
-                    sample["tokens"][ii][indices[ii][i]]:
-                l.append(ids[i])
-                ll.append(sample["wsd_lm_scores"][ii][i])
-                indices_f.append(indices[ii])
-                tokens.append(sample["tokens"][ii])
+        for ii, candidate_bn_ids in enumerate(bn_predictions):
+            if ii == 0: continue # skip transcription candidate (already inserted)
+            if len(candidate_bn_ids) > i:
+                cand_bn_id_idx = indices[ii][i]
+                cand_tokens = tokens[ii]
+                if tran_bn_id_idx == cand_bn_id_idx and tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]:
+                    bn_ids_window.append(candidate_bn_ids[i])
+                    wsd_lm_scores_window.append(wsd_lm_scores[ii][i])
+                    indices_window.append(indices[ii])
+                    tokens_window.append(tokens[ii])
 
-        if any([x for x in l if x != l[0]]):
-            if debug: print(l)
-            if debug: print(ll)
-
+        if any([id for id in bn_ids_window if id != bn_ids_window[0]]):
             if threshold is None:
-                min_idx = np.argmin(ll)
-                if debug: print(min_idx)
-                beams_to_filer.append(" ".join(tokens[min_idx][:indices_f[min_idx][i] + 1]))
+                min_idx = np.argmin(wsd_lm_scores_window)
+                beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
             else:
-                max_value = max(ll)
-                for el_index, el in enumerate(ll):
+                max_value = max(wsd_lm_scores_window)
+                for el_index, el in enumerate(wsd_lm_scores_window):
                     delta = max_value - el
                     if delta > threshold:
-                        if debug: print(el_index)
-                        beams_to_filer.append(" ".join(tokens[el_index][:indices_f[el_index][i] + 1]))
+                        beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
 
     return beams_to_filer
 
