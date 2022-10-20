@@ -140,18 +140,19 @@ def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_sample
 
     return hf_sample
 
-
-def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
+def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]],
+                                include_most_probable_candidates: bool = False) -> Dict[str, List[Dict]]:
     wsd_differences_samples = dict()
 
     for i, (k, v) in enumerate(ranked_samples.items()):
 
         if len(v) == 1: continue
 
-        p = [(float(vv["lm_probability"]), float(vv["logit_probability"])) for vv in v]
-        max_probability_indices = torch.argmax(torch.tensor([[x[i] for x in p] for i in range(len(p[0]))]), dim=-1)
-        if torch.all(torch.tensor([x == max_probability_indices[0] for x in max_probability_indices])):
-            continue
+        if not include_most_probable_candidates:
+            p = [(float(vv["lm_probability"]), float(vv["logit_probability"])) for vv in v]
+            max_probability_indices = torch.argmax(torch.tensor([[x[i] for x in p] for i in range(len(p[0]))]), dim=-1)
+            if torch.all(torch.tensor([x == max_probability_indices[0] for x in max_probability_indices])):
+                continue
 
         predictions = [vv["esc_predictions"] for vv in v]
         if not torch.all(torch.tensor([e == predictions[0] for e in predictions])):
@@ -179,6 +180,8 @@ if __name__ == "__main__":
             # "OMSTI"
         ]
     }
+    
+    INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
 
     if "jsonl_wsd" in LANGUAGE_MODEL["train_corpora"]:
         if "SemCor" in LANGUAGE_MODEL["train_corpora"] and "OMSTI" in LANGUAGE_MODEL["train_corpora"]:
@@ -188,7 +191,7 @@ if __name__ == "__main__":
             with open(f"{DATA_DIR}librispeech/librispeech_test_all_ranked_jsonl.json") as f:
                 samples = json.load(f)
 
-    wsd_samples = get_wsd_differences_samples(samples)
+    wsd_samples = get_wsd_differences_samples(samples, INCLUDE_MOST_PROBABLE_CANDIDATES)
 
     print("Done!")
 
@@ -226,7 +229,8 @@ if __name__ == "__main__":
     BS_FILTERING = {
         "criterion": "threshold" if THRESHOLD is not None else "argmin",
         "threshold": THRESHOLD,
-        "keep_same_words": True
+        "keep_same_words": True,
+        "include_most_probable_candidates": INCLUDE_MOST_PROBABLE_CANDIDATES
     }
 
     config = {
