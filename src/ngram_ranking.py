@@ -82,6 +82,8 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
                     sample["wsd_lm_scores"].append(lm_score)
                     sample["esc_predictions"].append(lemma_key)
                     sample["bn_esc_predictions"].append(bn_sense_id)
+                    sample["senses"].append(token_xml.text)
+                    sample["sense_indices"].append(token_i)
 
     scored_dataset_path = f"{os.path.dirname(xml_data_path)}/{stem_basename_suffix(xml_data_path)}_ranked"
 
