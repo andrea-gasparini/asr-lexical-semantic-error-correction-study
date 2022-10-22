@@ -25,11 +25,17 @@ class PointwiseMutualInformation:
             self.bigram_frequences = Counter()
             self.__compute_frequences()
         else:
-            self.unigram_frequences = unigram_frequences
-            self.bigram_frequences = bigram_frequences
+            self.unigram_frequences = Counter(unigram_frequences)
+            self.bigram_frequences = Counter(bigram_frequences)
 
     def __call__(self, token1: str, token2: str) -> float:
         return self.pmi(token1, token2)
+    
+    def __contains__(self, token: str) -> bool:
+        if len(token.split(" ")) > 1:            
+            return token in self.bigram_frequences
+        else:
+            return token in self.unigram_frequences
 
     def __compute_frequences(self) -> None:
         """Computes unigram and bigram frequences from the source file."""
@@ -40,6 +46,8 @@ class PointwiseMutualInformation:
                     self.unigram_frequences[token] += 1
                     if len(tokens) > i + 1:
                         self.bigram_frequences[f"{token} {tokens[i + 1]}"] += 1
+                        # to keep PMI symmetric
+                        self.bigram_frequences[f"{tokens[i + 1]} {token}"] += 1
 
     @property
     def __serializable_attrs(self) -> Dict:
@@ -54,8 +62,8 @@ class PointwiseMutualInformation:
 
     @cache
     def pmi(self, token1: str, token2: str) -> float:
-        if token1 not in self.unigram_frequences or token2 not in self.unigram_frequences:
-            return 0
+        if token1 not in self or token2 not in self or f"{token1} {token2}" not in self:
+            raise ValueError("Token not contained in the training corpus. Can not compute PMI.")
         prob_token1 = self.unigram_frequences[token1] / float(sum(self.unigram_frequences.values()))
         prob_token2 = self.unigram_frequences[token2] / float(sum(self.unigram_frequences.values()))
         prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / float(sum(self.bigram_frequences.values()))
@@ -72,8 +80,8 @@ class PointwiseMutualInformation:
         Pointwise mutual information can be normalized (NPMI) between [-1,+1] resulting in -1 (in the limit) for never
         occurring together, 0 for independence, and +1 for complete co-occurrence.
         """
-        if f"{token1} {token2}" not in self.bigram_frequences:
-            return -1
+        if f"{token1} {token2}" not in self:
+            raise ValueError("Token not contained in the training corpus. Can not compute PMI.")
         prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / float(sum(self.bigram_frequences.values()))
         return self.pmi(token1, token2) / -math.log(prob_token1_token2, 2)
 
