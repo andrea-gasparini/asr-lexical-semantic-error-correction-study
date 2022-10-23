@@ -1,6 +1,6 @@
 [submodule "kenlm"]
-	path = kenlm
+	path = src/kenlm
 	url = git@github.com:kpu/kenlm.git
 [submodule "esc"]
-	path = esc
-	url = git@github.com:SapienzaNLP/esc.git
+	path = src/esc
+	url = git@github.com:andrea-gasparini/esc.git
