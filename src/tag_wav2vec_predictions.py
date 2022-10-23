@@ -36,12 +36,13 @@ def tag_predictions(dataset: datasets.Dataset, dataset_name: str, predictions_di
             text_id = f"d{text_cnt:03d}"
             text = ET.SubElement(corpus, "text", attrib={"id": text_id, "chapter_id": str(chapter_id)})
 
+        # iterate over the transcription candidates
         for t_i, transcription in enumerate(sample["candidates"]):
 
             transcription_id = f"{text_id}.s{sentence_cnt:03d}"
 
             transcription_attributes = {"id": transcription_id,
-                                        "transcription": sample["transcription"],
+                                        "transcription": transcription,
                                         "sentence_id": str(sample["id"]),
                                         "speaker_id": str(sample["speaker_id"]),
                                         "lm_probability": str(sample["lm_probability"][t_i]),
