@@ -9,12 +9,13 @@ from utils import SenseInventory, stem_basename_suffix
 from utils.wsd import read_wsd_keys
 
 
-def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str, ngram_size: int,
-                           dump_type: Literal["xml", "json", "all"] = "all") -> None:
+VALID_DUMP_TYPES = ["xml", "json", "all"]
 
-    valid_dump_types = ["xml", "json", "all"]
-    if dump_type not in valid_dump_types:
-        raise ValueError(f"`dump_type` must be one among {valid_dump_types}, not '{dump_type}'")
+
+def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str,
+                           dump_type: Literal["xml", "json", "all"] = "all") -> None:
+    if dump_type not in VALID_DUMP_TYPES:
+        raise ValueError(f"`dump_type` must be one among {VALID_DUMP_TYPES}, but is '{dump_type}'")
 
     if not os.path.isfile(xml_data_path):
         raise ValueError(f"{xml_data_path} is not a valid xml data file")
@@ -61,15 +62,11 @@ def score_raganato_dataset(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
             # consider only instance tokens (ignore all <wf>)
             if token_xml.tag == "instance":
 
-                sample["senses"].append(token_xml.text)
-                sample["sense_indices"].append(token_i)
-
                 token_id = token_xml.attrib.get("id")
                 lemma_key = lemma_keys_dict.get(token_id, None)
                 bn_sense_id = inventory.lemma_key_to_bn_id(lemma_key)
 
                 if lemma_key is not None:
-
                     bn_sense_ids.append(bn_sense_id)
                     # take into consideration only the last `ngram_size` sense ids
                     # bn_sense_ids_window = bn_sense_ids[-ngram_size:]
@@ -103,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wsd-labels-path", type=str, required=True)
     parser.add_argument("--ngram-model-path", type=str, required=True)
     # default + not required
-    parser.add_argument("--dump-type", type=str, default="all")
+    parser.add_argument("--dump-type", type=str, default="all", choices=VALID_DUMP_TYPES)
 
     return parser.parse_args()
 
@@ -111,7 +108,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    score_raganato_dataset(xml_data_path=args.wsd_dataset_path, txt_gold_keys_path=args.wsd_labels_path,
+    compute_wsd_attributes(xml_data_path=args.wsd_dataset_path, txt_gold_keys_path=args.wsd_labels_path,
                            ngram_model_path=args.ngram_model_path, dump_type=args.dump_type)
 
 
