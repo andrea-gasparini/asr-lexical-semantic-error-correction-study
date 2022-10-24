@@ -1,0 +1,96 @@
+{
+  "builder_name": "librispeech_test_only",
+  "citation": "@inproceedings{panayotov2015librispeech,\n  title={Librispeech: an ASR corpus based on public domain audio books},\n  author={Panayotov, Vassil and Chen, Guoguo and Povey, Daniel and Khudanpur, Sanjeev},\n  booktitle={Acoustics, Speech and Signal Processing (ICASSP), 2015 IEEE International Conference on},\n  pages={5206--5210},\n  year={2015},\n  organization={IEEE}\n}\n",
+  "config_name": "other",
+  "dataset_size": 353096324,
+  "description": "LibriSpeech is a corpus of approximately 1000 hours of read English speech with sampling rate of 16 kHz,\nprepared by Vassil Panayotov with the assistance of Daniel Povey. The data is derived from read\naudiobooks from the LibriVox project, and has been carefully segmented and aligned.87\n",
+  "download_checksums": {
+    "http://www.openslr.org/resources/12/test-other.tar.gz": {
+      "num_bytes": 328757843,
+      "checksum": "d09c181bba5cf717b3dee7d4d592af11a3ee3a09e08ae025c5506f6ebe961c29"
+    }
+  },
+  "download_size": 328757843,
+  "features": {
+    "text": {
+      "dtype": "string",
+      "id": null,
+      "_type": "Value"
+    },
+    "speaker_id": {
+      "dtype": "int64",
+      "id": null,
+      "_type": "Value"
+    },
+    "chapter_id": {
+      "dtype": "int64",
+      "id": null,
+      "_type": "Value"
+    },
+    "id": {
+      "dtype": "string",
+      "id": null,
+      "_type": "Value"
+    },
+    "transcription": {
+      "dtype": "string",
+      "id": null,
+      "_type": "Value"
+    },
+    "candidates": {
+      "feature": {
+        "dtype": "string",
+        "id": null,
+        "_type": "Value"
+      },
+      "length": -1,
+      "id": null,
+      "_type": "Sequence"
+    },
+    "lm_probability": {
+      "feature": {
+        "dtype": "float64",
+        "id": null,
+        "_type": "Value"
+      },
+      "length": -1,
+      "id": null,
+      "_type": "Sequence"
+    },
+    "logit_probability": {
+      "feature": {
+        "dtype": "float64",
+        "id": null,
+        "_type": "Value"
+      },
+      "length": -1,
+      "id": null,
+      "_type": "Sequence"
+    }
+  },
+  "homepage": "http://www.openslr.org/12",
+  "license": "",
+  "post_processed": null,
+  "post_processing_size": null,
+  "size_in_bytes": 681854167,
+  "splits": {
+    "test": {
+      "name": "test",
+      "num_bytes": 353096324,
+      "num_examples": 2939,
+      "dataset_name": "librispeech_test_only"
+    }
+  },
+  "supervised_keys": {
+    "input": "file",
+    "output": "text"
+  },
+  "task_templates": [],
+  "version": {
+    "version_str": "2.1.0",
+    "description": "",
+    "major": 2,
+    "minor": 1,
+    "patch": 0
+  }
+}
