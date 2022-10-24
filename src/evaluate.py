@@ -19,10 +19,49 @@ from constants import DATA_DIR
 from utils import list_to_dict
 
 
-def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
-    config = {k: v for k, v in config.items() if v is not None}
-    wandb.init(project="wsd-s2t", entity="andreagasparini", config=config, name=run_name)
+def compute_transcriptions_metrics(model_name: str, filtered_predictions_all: datasets.Dataset) -> Dict[str, float]:
+    predictions_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{model_name}-test_other")
+    predictions_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{model_name}-test_clean")
+    predictions_all = datasets.concatenate_datasets([predictions_other, predictions_clean])
+    
+    corrected_transcriptions_cnt = 0
+    correct_transcriptions_cnt, wrong_transcriptions_cnt = 0, 0
+    wrong_transcriptions_changed_cnt, correct_transcription_filtered_cnt = 0, 0
+    transcription_not_in_candidates_cnt, correct_transcription_in_new_candidates_cnt = 0, 0
 
+    for i in range(len(predictions_all)):
+        text = predictions_all[i]["text"]
+        transcription = predictions_all[i]["transcription"]
+        candidates = predictions_all[i]["candidates"]
+        new_transcription = filtered_predictions_all[i]["transcription"]
+        new_candidates = filtered_predictions_all[i]["candidates"]
+        if transcription != text:
+            wrong_transcriptions_cnt += 1
+            
+            if transcription != new_transcription:
+                wrong_transcriptions_changed_cnt += 1
+                if text == new_transcription:
+                    corrected_transcriptions_cnt += 1
+            
+            if text not in candidates:
+                transcription_not_in_candidates_cnt += 1
+                if text in new_candidates:
+                    correct_transcription_in_new_candidates_cnt += 1
+
+        else:
+            correct_transcriptions_cnt += 1
+            if transcription != new_transcription:
+                correct_transcription_filtered_cnt += 1
+                
+    return {
+        "corrected_transcriptions": corrected_transcriptions_cnt / wrong_transcriptions_cnt,
+        "wrong_transcriptions_changed": wrong_transcriptions_changed_cnt / wrong_transcriptions_cnt,        
+        "correct_transcription_filtered": correct_transcription_filtered_cnt / correct_transcriptions_cnt,
+        "correct_transcription_in_new_candidates": correct_transcription_in_new_candidates_cnt / transcription_not_in_candidates_cnt,
+    }
+    
+    
+def compute_wer(predictions: Dict[str, datasets.Dataset]) -> Dict[str, float]:
     clean_wer = wer(predictions["clean"]["text"], predictions["clean"]["transcription"])
     other_wer = wer(predictions["other"]["text"], predictions["other"]["transcription"])
     all_wer = wer(predictions["all"]["text"], predictions["all"]["transcription"])
@@ -31,16 +70,26 @@ def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
     other_wil = wil(predictions["other"]["text"], predictions["other"]["transcription"])
     all_wil = wil(predictions["all"]["text"], predictions["all"]["transcription"])
 
-    metrics = {
+    return {
         "wer_other": other_wer,
         "wer_clean": clean_wer,
         "wer_all": all_wer,
         "wil_other": other_wil,
         "wil_clean": clean_wil,
-        "wil_all": all_wil,
+        "wil_all": all_wil
     }
 
+
+def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
+    config = {k: v for k, v in config.items() if v is not None}
+    wandb.init(project="wsd-s2t", entity="andreagasparini", config=config, name=run_name)
+
+    model_name = config["model"].split("/")[1]
+
+    metrics = {**compute_wer(predictions), **compute_transcriptions_metrics(model_name, predictions["all"])}
+
     wandb.log(metrics)
+
     return metrics
 
 
@@ -270,24 +319,23 @@ if __name__ == "__main__":
     map_function = partial(filter_beam_search, decoder, THRESHOLD, wsd_samples, samples)
     # map_function = wsdmodel.beam_search
 
-    # base_save_path = f"{DATA_DIR}predictions/filtered_beam_search_thresholded_{THRESHOLD}_nosamewords"
-    if threshold is not None:
+    if THRESHOLD is not None:
         base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_thresholded_{THRESHOLD}_nosamewords"
     else:
         base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_argmin_nosamewords"
 
-    predictions = dict()
-    predictions["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
-    predictions["other"].save_to_disk(f"{base_save_path}-test_other")
-    predictions["clean"] = ls_test_clean.map(map_function, remove_columns=["file", "audio"])
-    predictions["clean"].save_to_disk(f"{base_save_path}-test_clean")
-    predictions["all"] = datasets.concatenate_datasets([predictions["other"], predictions["clean"]])
+    preds = dict()
+    preds["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
+    preds["other"].save_to_disk(f"{base_save_path}-test_other")
+    preds["clean"] = ls_test_clean.map(map_function, remove_columns=["file", "audio"])
+    preds["clean"].save_to_disk(f"{base_save_path}-test_clean")
+    preds["all"] = datasets.concatenate_datasets([preds["other"], preds["clean"]])
 
     if args.wandb:
 
         print("=== Storing results on Weights & Biases ===")
 
-        log_on_wandb(config=CONFIG, predictions=predictions, run_name=RUN_NAME)
+        log_on_wandb(config=CONFIG, predictions=preds, run_name=RUN_NAME)
 
     print("Done!")
     exit(0)
