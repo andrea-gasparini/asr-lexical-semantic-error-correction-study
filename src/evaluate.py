@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from functools import partial
@@ -131,8 +132,13 @@ def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_sample
     else:
 
         ranked_sample = list_to_dict(samples[hf_sample["id"]])
-        candidates = ranked_sample["transcription"]
-        transcription = candidates[0]
+        if "transcription" in ranked_sample:
+            candidates = ranked_sample["transcription"]
+            transcription = candidates[0]
+        else:
+            output_beams = processor_ngram.decoder.decode_beams(forward(hf_sample).cpu().numpy())
+            candidates = [x[0] for x in output_beams]
+            transcription = output_beams[0][0] if len(output_beams) > 0 else ""
 
     hf_sample["candidates"] = candidates
     hf_sample["transcription"] = transcription
@@ -140,7 +146,7 @@ def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_sample
     return hf_sample
 
 def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]],
-                                include_most_probable_candidates: bool = False) -> Dict[str, List[Dict]]:
+                                include_most_probable_candidates: bool = True) -> Dict[str, List[Dict]]:
     wsd_differences_samples = dict()
 
     for i, (k, v) in enumerate(ranked_samples.items()):
@@ -164,9 +170,28 @@ def get_wsd_differences_samples(ranked_samples: Dict[str, List[Dict]],
     return wsd_differences_samples
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    # required
+    parser.add_argument("-m", "--model", type=str, required=True, choices=["base", "large-self"])
+    # default + not required
+    parser.add_argument("-w", "--wandb", action="store_true", default=False)
+
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # MODEL = "patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram"
-    MODEL = "patrickvonplaten/wav2vec2-base-960h-4-gram"
+    
+    args = parse_args()
+
+    BASE = "patrickvonplaten/wav2vec2-base-960h-4-gram"
+    LARGE_SELF = "patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram"    
+    
+    if args.model == "base":
+        MODEL = BASE
+    elif args.model == "large-self":
+        MODEL = LARGE_SELF
+
     MODEL_NAME = MODEL.split("/")[1]
     
     LANGUAGE_MODEL = {
@@ -181,7 +206,7 @@ if __name__ == "__main__":
     
     INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
     THRESHOLD = threshold = None
-    
+
     SCORER = LANGUAGE_MODEL
 
     BS_FILTERING = {
@@ -198,10 +223,16 @@ if __name__ == "__main__":
         "beam_search_filtering_settings": BS_FILTERING if SCORER is not None else None
     }
     
-    # RUN_NAME=f"wav2vec2-large-self-lm-bs-thresholded-{THRESHOLD}-ksw-alltrainwsdlm"
-    # RUN_NAME=f"wav2vec2-large-self-lm-bs-argmin-ksw"
-    # RUN_NAME=f"wav2vec2-base-lm-bs-thresholded-{THRESHOLD}-ksw"
-    RUN_NAME=f"wav2vec2-base-lm-bs-argmin-ksw-impc"
+    if MODEL == BASE:
+        if threshold is not None:
+            RUN_NAME=f"wav2vec2-base-lm-bs-thresholded-{THRESHOLD}-ksw"
+        else:
+            RUN_NAME=f"wav2vec2-base-lm-bs-argmin-ksw"
+    else:
+        if threshold is not None:
+            RUN_NAME=f"wav2vec2-large-self-lm-bs-thresholded-{THRESHOLD}-ksw"
+        else:
+            RUN_NAME=f"wav2vec2-large-self-lm-bs-argmin-ksw"
 
     print("=== Loading LibriSpeech test set ===")
 
@@ -214,10 +245,10 @@ if __name__ == "__main__":
 
     if "jsonl_wsd" in LANGUAGE_MODEL["train_corpora"]:
         if "SemCor" in LANGUAGE_MODEL["train_corpora"] and "OMSTI" in LANGUAGE_MODEL["train_corpora"]:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked_jsonl+semcor+omsti.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked+semcor+omsti.json") as f:
                 samples = json.load(f)
         else:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked_jsonl.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-librispeech_test_all_ranked.json") as f:
                 samples = json.load(f)
 
     wsd_samples = get_wsd_differences_samples(samples, INCLUDE_MOST_PROBABLE_CANDIDATES)
@@ -241,9 +272,9 @@ if __name__ == "__main__":
 
     # base_save_path = f"{DATA_DIR}predictions/filtered_beam_search_thresholded_{THRESHOLD}_nosamewords"
     if threshold is not None:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_thresholded_{THRESHOLD}_nosamewords_impc"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_thresholded_{THRESHOLD}_nosamewords"
     else:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_argmin_nosamewords_impc"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_argmin_nosamewords"
 
     predictions = dict()
     predictions["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
@@ -252,9 +283,11 @@ if __name__ == "__main__":
     predictions["clean"].save_to_disk(f"{base_save_path}-test_clean")
     predictions["all"] = datasets.concatenate_datasets([predictions["other"], predictions["clean"]])
 
-    print("=== Storing results on Weights & Biases ===")
+    if args.wandb:
 
-    log_on_wandb(config=CONFIG, predictions=predictions, run_name=RUN_NAME)
+        print("=== Storing results on Weights & Biases ===")
+
+        log_on_wandb(config=CONFIG, predictions=predictions, run_name=RUN_NAME)
 
     print("Done!")
     exit(0)
