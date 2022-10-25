@@ -26,7 +26,20 @@ def generate_librispeech_predictions(hf_model_name: str = "facebook/wav2vec2-bas
         predictions.save_to_disk(os.path.join(predictions_dir, f"{model_name}-4-gram-{dataset_name}"))
 
 
-def tag_predictions(dataset: datasets.Dataset, dataset_name: str, predictions_dir: str, model_name: str) -> None:
+def compute_wsd_dataset(dataset: datasets.Dataset, dataset_name: str, predictions_dir: str, model_name: str) -> None:
+    """
+    Preprocesses the given dataset, containing the predictions of a Wav2Vec2 + LM model, with lemmas and part-of-speech (POS)
+    and saves it to a xml WSD dataset file following Raganato's format.    
+    
+    The WSD dataset format has been introduced by Raganato et al. (2017) in
+    [Word Sense Disambiguation: A Unified Evaluation Framework and Empirical Comparison](https://www.aclweb.org/anthology/E17-1010/).
+    
+    Args:
+        dataset (`datasets.Dataset`): dataset containing the predictions of a Wav2Vec2 + LM model
+        dataset_name (`str`): name of the given dataset
+        predictions_dir (`str`): directory to which to save the tagged WSD dataset
+        model_name (`str`): name of the model used to compute the predictions
+    """
     tagging_pipeline = stanza.Pipeline(lang='en', processors='tokenize,mwt,pos,lemma', tokenize_no_ssplit=True)
 
     assert "candidates" in dataset[0], f'Predictions of model "{model_name}" are not valid ' \
@@ -124,8 +137,8 @@ if __name__ == "__main__":
         ls_test_other = datasets.Dataset.load_from_disk(f"{predictions_path}{model_name}-test_other")
         ls_test_clean = datasets.Dataset.load_from_disk(f"{predictions_path}{model_name}-test_clean")
         ls_test_all = datasets.concatenate_datasets([ls_test_clean, ls_test_other]).sort(column="chapter_id")
-        tag_predictions(ls_test_all, "librispeech_test_all", predictions_path, model_name)
+        compute_wsd_dataset(ls_test_all, "librispeech_test_all", predictions_path, model_name)
 
     if args.dataset_name is not None:
         dataset = datasets.Dataset.load_from_disk(os.path.join(predictions_path, args.dataset_name))
-        tag_predictions(dataset, args.dataset_name, predictions_path, model_name)
+        compute_wsd_dataset(dataset, args.dataset_name, predictions_path, model_name)
