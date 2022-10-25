@@ -17,6 +17,9 @@ def extract_wsd_labels_raganato(sense_ids_file_path: str, xml_data_path: str, tx
     """
     Extracts the sense ids' sequences of each sample from a WSD dataset (following Raganato's format)
     and writes them to a file, one per line. Skipping sentences which do not contain any tagged sense.
+    
+    The required format for the WSD dataset has been introduced by Raganato et al. (2017) in
+    [Word Sense Disambiguation: A Unified Evaluation Framework and Empirical Comparison](https://www.aclweb.org/anthology/E17-1010/).
 
     Args:
         sense_ids_file_path: a path where to save the file with the extracted sense ids
