@@ -9,13 +9,14 @@ from typing import Tuple
 import datasets
 import numpy as np
 import torch
+import wandb
 from jiwer import wer, wil
 from transformers import AutoModelForCTC, AutoProcessor, Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2ProcessorWithLM
 
-import wandb
 from pyctcdecode_local import BeamSearchDecoderCTC
 from constants import *
 from constants import DATA_DIR
+from utils.metrics import PointwiseMutualInformation as PMI
 from utils import list_to_dict
 
 
@@ -93,6 +94,66 @@ def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
     return metrics
 
 
+def compute_beams_to_filter_pmi(pmi: PMI, sample: Dict, threshold: Optional[float] = None):
+    tokens = sample["tokens"]
+    indices = sample["sense_indices"]    
+    wsd_pmi_scores = sample["wsd_pmi_scores"]
+    bn_predictions = sample["bn_esc_predictions"]
+    
+    beams_to_filer = list()
+    
+    for i, transcription_bn_id in enumerate(bn_predictions[0]):
+
+        if transcription_bn_id not in pmi.unigram_frequences:
+            continue
+
+        tran_bn_id_idx = indices[0][i]
+        tran_tokens = tokens[0]
+
+        bn_ids_window = [transcription_bn_id]
+        pmis_window = [wsd_pmi_scores[0][i]] # [pmi.compute_average_pmi(i, bn_predictions[0])]
+        indices_window = [indices[0]]
+        tokens_window = [tokens[0]]
+
+        for ii, candidate_bn_ids in enumerate(bn_predictions):
+
+            # skip transcription candidate (already inserted)
+            if ii == 0:				
+                continue
+
+            if len(candidate_bn_ids) > i:
+                
+                if candidate_bn_ids[i] not in pmi.unigram_frequences:
+                    continue
+            
+                cand_bn_id_idx = indices[ii][i]
+                cand_tokens = tokens[ii]
+
+                tokens_are_different = tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]
+                bn_ids_are_equal = transcription_bn_id == candidate_bn_ids[i]
+
+                if tran_bn_id_idx == cand_bn_id_idx and (tokens_are_different or bn_ids_are_equal):
+                    bn_ids_window.append(candidate_bn_ids[i])
+                    pmis_window.append(wsd_pmi_scores[ii][i]) # (pmi.compute_average_pmi(i, candidate_bn_ids))
+                    indices_window.append(indices[ii])
+                    tokens_window.append(tokens[ii])
+
+        if any([id for id in bn_ids_window if id != bn_ids_window[0]]):
+            if threshold is None:
+                if ARGMIN:
+                    min_idx = np.argmin(pmis_window)
+                    beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                else:
+                    min_value = min(pmis_window)
+                    for el_index, el in enumerate(pmis_window):
+                        if el == min_value:
+                            beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
+            else:
+                raise ValueError("thresholded filtering w/ PMI not implemented")
+            
+    return beams_to_filer
+
+
 def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
     indices = sample["sense_indices"]
     bn_predictions = sample["bn_esc_predictions"]
@@ -113,11 +174,19 @@ def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
         tokens_window = [tokens[0]]
 
         for ii, candidate_bn_ids in enumerate(bn_predictions):
-            if ii == 0: continue # skip transcription candidate (already inserted)
+
+            # skip transcription candidate (already inserted)
+            if ii == 0:
+                continue
+
             if len(candidate_bn_ids) > i:
                 cand_bn_id_idx = indices[ii][i]
                 cand_tokens = tokens[ii]
-                if tran_bn_id_idx == cand_bn_id_idx and tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]:
+
+                tokens_are_different = tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]
+                bn_ids_are_equal = transcription_bn_id == candidate_bn_ids[i]
+
+                if tran_bn_id_idx == cand_bn_id_idx and (tokens_are_different or bn_ids_are_equal):
                     bn_ids_window.append(candidate_bn_ids[i])
                     wsd_lm_scores_window.append(wsd_lm_scores[ii][i])
                     indices_window.append(indices[ii])
@@ -125,8 +194,14 @@ def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
 
         if any([id for id in bn_ids_window if id != bn_ids_window[0]]):
             if threshold is None:
-                min_idx = np.argmin(wsd_lm_scores_window)
-                beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                if ARGMIN:
+                    min_idx = np.argmin(wsd_lm_scores_window)
+                    beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                else:
+                    min_value = min(wsd_lm_scores_window)
+                    for el_index, el in enumerate(wsd_lm_scores_window):
+                        if el == min_value:
+                            beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
             else:
                 max_value = max(wsd_lm_scores_window)
                 for el_index, el in enumerate(wsd_lm_scores_window):
@@ -169,10 +244,17 @@ def forward(hf_sample):
     return logits
 
 
-def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_samples: Dict, samples: Dict, hf_sample):
+def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_samples: Dict, samples: Dict, pmi: PMI, hf_sample):
     if hf_sample["id"] in wsd_samples:
 
-        beams_to_filer = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
+        if SCORER == _PMI:
+            if pmi is None:
+                raise ValueError("pmi object is None")
+            beams_to_filer = compute_beams_to_filter_pmi(pmi, list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
+        elif SCORER == LANGUAGE_MODEL:
+            beams_to_filer = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
+        else:
+            raise ValueError(f"scorer {SCORER} not supported")
 
         output_beams = decoder.decode_beams(forward(hf_sample).cpu().numpy(), beams_to_filter=beams_to_filer)
         candidates = [x[0] for x in output_beams]
@@ -243,23 +325,32 @@ if __name__ == "__main__":
 
     MODEL_NAME = MODEL.split("/")[1]
     
+    TRAIN_CORPORA = [
+        "jsonl_wsd",
+        # "SemCor",
+        # "OMSTI"
+    ]
+    
     LANGUAGE_MODEL = {
         "type": "WSD Language Model (KenLM)",
         "ngram_size": 4,
-        "train_corpora": [
-            "jsonl_wsd",
-            # "SemCor",
-            # "OMSTI"
-        ]
+        "train_corpora": TRAIN_CORPORA
     }
+    
+    _PMI = {
+        "type": "WSD Pointwise Mutual Information",
+        "mode": "average",
+        "train_corpora": TRAIN_CORPORA
+    }
+    
+    SCORER = _PMI
     
     INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
     THRESHOLD = threshold = None
-
-    SCORER = LANGUAGE_MODEL
+    ARGMIN = True
 
     BS_FILTERING = {
-        "criterion": "threshold" if THRESHOLD is not None else "argmin",
+        "criterion": "threshold" if THRESHOLD is not None else "min" if not ARGMIN else "argmin",
         "threshold": THRESHOLD,
         "keep_same_words": True,
         "include_most_probable_candidates": INCLUDE_MOST_PROBABLE_CANDIDATES
@@ -272,16 +363,20 @@ if __name__ == "__main__":
         "beam_search_filtering_settings": BS_FILTERING if SCORER is not None else None
     }
     
+    scorer = '-pmi' if SCORER == _PMI else '-lm'
+    
+    ksw = '-ksw2' if BS_FILTERING['keep_same_words'] else ''
+    
     if MODEL == BASE:
         if threshold is not None:
-            RUN_NAME=f"wav2vec2-base-lm-bs-thresholded-{THRESHOLD}-ksw"
+            RUN_NAME=f"wav2vec2-base{scorer}-bs-thresholded-{THRESHOLD}{ksw}"
         else:
-            RUN_NAME=f"wav2vec2-base-lm-bs-argmin-ksw"
+            RUN_NAME=f"wav2vec2-base{scorer}-bs-{'min' if not ARGMIN else 'argmin'}{ksw}"
     else:
         if threshold is not None:
-            RUN_NAME=f"wav2vec2-large-self-lm-bs-thresholded-{THRESHOLD}-ksw"
+            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-thresholded-{THRESHOLD}{ksw}"
         else:
-            RUN_NAME=f"wav2vec2-large-self-lm-bs-argmin-ksw"
+            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-{'min' if not ARGMIN else 'argmin'}{ksw}"
 
     print("=== Loading LibriSpeech test set ===")
 
@@ -316,13 +411,15 @@ if __name__ == "__main__":
     
     decoder = BeamSearchDecoderCTC.load_from_dir(f"{MODELS_DIR}ngrams/librispeech/4-gram")
 
-    map_function = partial(filter_beam_search, decoder, THRESHOLD, wsd_samples, samples)
+    pmi = PMI.load_from_dir(f"{MODELS_DIR}pmi/jsonl.json")
+
+    map_function = partial(filter_beam_search, decoder, THRESHOLD, wsd_samples, samples, pmi)
     # map_function = wsdmodel.beam_search
 
     if THRESHOLD is not None:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_thresholded_{THRESHOLD}_nosamewords"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_thresholded_{THRESHOLD}_nosamewords2"
     else:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-filtered_bs_argmin_nosamewords"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_{'min' if not ARGMIN else 'argmin'}_nosamewords2"
 
     preds = dict()
     preds["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
