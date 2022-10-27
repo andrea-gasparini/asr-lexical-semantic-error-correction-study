@@ -3,17 +3,19 @@ import json
 import os
 from typing import Dict, List, Literal
 from xml.etree import ElementTree as ET
+from tqdm import tqdm
 
 import kenlm
 from utils import SenseInventory, stem_basename_suffix
+from utils.metrics import PointwiseMutualInformation
 from utils.wsd import read_wsd_keys
 
 
 VALID_DUMP_TYPES = ["xml", "json", "all"]
 
 
-def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str,
-                           dump_type: Literal["xml", "json", "all"] = "all") -> None:
+def tag_wsd_predictions(xml_data_path: str, txt_gold_keys_path: str, ngram_model_path: str, pmi_attrs_path: str,
+                        dump_type: Literal["xml", "json", "all"] = "all") -> None:
     if dump_type not in VALID_DUMP_TYPES:
         raise ValueError(f"`dump_type` must be one among {VALID_DUMP_TYPES}, but is '{dump_type}'")
 
@@ -24,8 +26,12 @@ def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
 
     if not os.path.isfile(ngram_model_path):
         raise ValueError(f"{ngram_model_path} is not a valid arpa ngram file")
+    
+    if not os.path.isfile(pmi_attrs_path):
+        raise ValueError(f"{pmi_attrs_path} is not a valid json pmi's dump file")
 
     language_model = kenlm.LanguageModel(ngram_model_path)
+    pmi_model = PointwiseMutualInformation.load_from_dir(pmi_attrs_path)
 
     corpus = ET.parse(xml_data_path)
 
@@ -34,7 +40,7 @@ def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
     inventory = SenseInventory()
 
     # iterate over <sentence> tags from the given xml file
-    for sent_xml in corpus.iter("sentence"):
+    for sent_xml in tqdm(list(corpus.iter("sentence"))):
 
         sentence_id = sent_xml.attrib.get("sentence_id")
         if sentence_id not in samples:
@@ -45,6 +51,7 @@ def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
             "tokens": list(),
             "senses": list(),
             "sense_indices": list(),
+            "wsd_pmi_scores": list(),
             "wsd_lm_scores": list(),
             "esc_predictions": list(),
             "bn_esc_predictions": list(),
@@ -82,6 +89,10 @@ def compute_wsd_attributes(xml_data_path: str, txt_gold_keys_path: str, ngram_mo
                     sample["senses"].append(token_xml.text)
                     sample["sense_indices"].append(token_i)
 
+        for i in range(len(bn_sense_ids)):
+            pmi_score = pmi_model.compute_average_pmi(i, bn_sense_ids)
+            sample["wsd_pmi_scores"].append(pmi_score)
+
     scored_dataset_path = f"{os.path.dirname(xml_data_path)}/{stem_basename_suffix(xml_data_path)}_ranked"
 
     if dump_type == "xml" or dump_type == "all":
@@ -99,6 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wsd-dataset-path", type=str, required=True)
     parser.add_argument("--wsd-labels-path", type=str, required=True)
     parser.add_argument("--ngram-model-path", type=str, required=True)
+    parser.add_argument("--pmi-attrs-path", type=str, required=True)
     # default + not required
     parser.add_argument("--dump-type", type=str, default="all", choices=VALID_DUMP_TYPES)
 
@@ -108,8 +120,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    compute_wsd_attributes(xml_data_path=args.wsd_dataset_path, txt_gold_keys_path=args.wsd_labels_path,
-                           ngram_model_path=args.ngram_model_path, dump_type=args.dump_type)
+    tag_wsd_predictions(xml_data_path=args.wsd_dataset_path, txt_gold_keys_path=args.wsd_labels_path,
+                        ngram_model_path=args.ngram_model_path, pmi_attrs_path=args.pmi_attrs_path,
+                        dump_type=args.dump_type)
 
 
 if __name__ == "__main__":
