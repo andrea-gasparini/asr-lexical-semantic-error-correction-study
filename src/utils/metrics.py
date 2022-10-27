@@ -27,12 +27,15 @@ class PointwiseMutualInformation:
         else:
             self.unigram_frequences = Counter(unigram_frequences)
             self.bigram_frequences = Counter(bigram_frequences)
+            
+        self.__sum_unigram_frequences = float(sum(self.unigram_frequences.values()))
+        self.__sum_bigram_frequences = float(sum(self.bigram_frequences.values()))
 
     def __call__(self, token1: str, token2: str) -> float:
         return self.pmi(token1, token2)
     
     def __contains__(self, token: str) -> bool:
-        if len(token.split(" ")) > 1:            
+        if len(token.split(" ")) == 2:
             return token in self.bigram_frequences
         else:
             return token in self.unigram_frequences
@@ -64,9 +67,9 @@ class PointwiseMutualInformation:
     def pmi(self, token1: str, token2: str) -> float:
         if token1 not in self or token2 not in self or f"{token1} {token2}" not in self:
             raise ValueError("Token not contained in the training corpus. Can not compute PMI.")
-        prob_token1 = self.unigram_frequences[token1] / float(sum(self.unigram_frequences.values()))
-        prob_token2 = self.unigram_frequences[token2] / float(sum(self.unigram_frequences.values()))
-        prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / float(sum(self.bigram_frequences.values()))
+        prob_token1 = self.unigram_frequences[token1] / self.__sum_unigram_frequences
+        prob_token2 = self.unigram_frequences[token2] / self.__sum_unigram_frequences
+        prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / self.__sum_bigram_frequences
         return math.log(prob_token1_token2 / float(prob_token1 * prob_token2), 2)
 
     def ppmi(self, token1: str, token2: str) -> float:
