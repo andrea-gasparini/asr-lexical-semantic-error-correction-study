@@ -2,7 +2,7 @@ import json
 import math
 from collections import Counter
 from functools import cache
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from tqdm import tqdm
 
@@ -84,6 +84,24 @@ class PointwiseMutualInformation:
             raise ValueError("Token not contained in the training corpus. Can not compute PMI.")
         prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / float(sum(self.bigram_frequences.values()))
         return self.pmi(token1, token2) / -math.log(prob_token1_token2, 2)
+
+    def compute_average_pmi(self, token_idx: int, tokens: List[str]) -> float:
+        token = tokens[token_idx]
+        tmp_sum, not_valid_tokens = 0, 0
+
+        for ii, token2 in enumerate(tokens):
+            if token_idx == ii: continue
+            if f"{token} {token2}" in self.bigram_frequences:
+                tmp_sum += self.pmi(token, token2)
+            else:
+                # TODO can we do better than ignoring? (case w/ unseen pair in the train corpus)
+                not_valid_tokens += 1
+                continue
+
+        try:
+            return tmp_sum / (len(tokens) - not_valid_tokens)
+        except ZeroDivisionError:
+            return 0
 
     def save_to_dir(self, filepath: str) -> None:
         """Saves to a directory."""
