@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 from functools import partial
-from typing import Dict
+from typing import Dict, Literal
 from typing import Optional, Union, List
 from typing import Tuple
 
@@ -94,82 +94,69 @@ def log_on_wandb(config: Dict, run_name: str, predictions: Dict) -> Dict:
     return metrics
 
 
-def compute_beams_to_filter_pmi(pmi: PMI, sample: Dict, threshold: Optional[float] = None):
+def compute_beams_to_filter_pmi_1_vs_all(sample: Dict, pmi: PMI, threshold: float = 0.0):
+    if threshold is None:
+        threshold = 0.0
+    
+    senses_lists = sample["bn_esc_predictions"]
+    sense_indices = sample["sense_indices"]
     tokens = sample["tokens"]
-    indices = sample["sense_indices"]    
-    wsd_pmi_scores = sample["wsd_pmi_scores"]
-    bn_predictions = sample["bn_esc_predictions"]
-    
-    beams_to_filer = list()
-    
-    for i, transcription_bn_id in enumerate(bn_predictions[0]):
 
-        if transcription_bn_id not in pmi.unigram_frequences:
-            continue
+    beams_to_filter = list()
 
-        tran_bn_id_idx = indices[0][i]
-        tran_tokens = tokens[0]
+    for candidate_idx, senses in enumerate(senses_lists):
 
-        bn_ids_window = [transcription_bn_id]
-        pmis_window = [wsd_pmi_scores[0][i]] # [pmi.compute_average_pmi(i, bn_predictions[0])]
-        indices_window = [indices[0]]
-        tokens_window = [tokens[0]]
+        senses = [sense for sense in senses if sense in pmi.unigram_frequences]
 
-        for ii, candidate_bn_ids in enumerate(bn_predictions):
-
-            # skip transcription candidate (already inserted)
-            if ii == 0:				
-                continue
-
-            if len(candidate_bn_ids) > i:
+        for sense_idx, sense in enumerate(senses):
+            is_valid, is_in_pmi = False, False
+            for sense_idx2, sense2 in enumerate(senses):
                 
-                if candidate_bn_ids[i] not in pmi.unigram_frequences:
+                if sense_idx == sense_idx2:
                     continue
-            
-                cand_bn_id_idx = indices[ii][i]
-                cand_tokens = tokens[ii]
-
-                tokens_are_different = tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]
-                bn_ids_are_equal = transcription_bn_id == candidate_bn_ids[i]
-
-                if tran_bn_id_idx == cand_bn_id_idx and (tokens_are_different or bn_ids_are_equal):
-                    bn_ids_window.append(candidate_bn_ids[i])
-                    pmis_window.append(wsd_pmi_scores[ii][i]) # (pmi.compute_average_pmi(i, candidate_bn_ids))
-                    indices_window.append(indices[ii])
-                    tokens_window.append(tokens[ii])
-
-        if any([id for id in bn_ids_window if id != bn_ids_window[0]]):
-            if threshold is None:
-                if ARGMIN:
-                    min_idx = np.argmin(pmis_window)
-                    beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                
+                if f"{sense} {sense2}" in pmi.bigram_frequences:
+                    is_in_pmi = True
+                    v = pmi.pmi(sense, sense2)				
+                    if v > threshold:
+                        is_valid = True
+                        break
                 else:
-                    min_value = min(pmis_window)
-                    for el_index, el in enumerate(pmis_window):
-                        if el == min_value:
-                            beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
-            else:
-                raise ValueError("thresholded filtering w/ PMI not implemented")
-            
-    return beams_to_filer
+                    # TODO can we do better than ignoring? (case w/ unseen pair in the train corpus)
+                    continue
+
+            if not is_valid:				
+                if is_in_pmi:
+                    sense_token_index = sense_indices[candidate_idx][sense_idx]
+                    beams_to_filter.append(" ".join(tokens[candidate_idx][:sense_token_index + 1]))
+        
+    return beams_to_filter
 
 
-def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
+def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None,
+                            mode: Literal["lm", "pmi"] = "lm", pmi: Optional[PMI] = None):
+    if mode == "pmi" and pmi is None:
+        raise ValueError(f"when `mode` == 'pmi' you must give a valid `pmi` parameter as well")
+    
     indices = sample["sense_indices"]
     bn_predictions = sample["bn_esc_predictions"]
-    wsd_lm_scores = sample["wsd_lm_scores"]
+    scores = sample["wsd_lm_scores" if mode == "lm" else "wsd_pmi_scores"]
     tokens = sample["tokens"]
 
     # TODO: we're not considering sequences with less senses than the 1st one
 
-    beams_to_filer = list()
+    beams_to_filter = list()
 
     for i, transcription_bn_id in enumerate(bn_predictions[0]):
+        
+        if mode == "pmi" and transcription_bn_id not in pmi.unigram_frequences:
+            continue
+        
         tran_bn_id_idx = indices[0][i]
         tran_tokens = tokens[0]
 
         bn_ids_window = [transcription_bn_id]
-        wsd_lm_scores_window = [wsd_lm_scores[0][i]]
+        scores_window = [scores[0][i]]
         indices_window = [indices[0]]
         tokens_window = [tokens[0]]
 
@@ -180,6 +167,10 @@ def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
                 continue
 
             if len(candidate_bn_ids) > i:
+                
+                if mode == "pmi" and candidate_bn_ids[i] not in pmi.unigram_frequences:
+                    continue
+                
                 cand_bn_id_idx = indices[ii][i]
                 cand_tokens = tokens[ii]
 
@@ -188,28 +179,28 @@ def compute_beams_to_filter(sample: Dict, threshold: Optional[float] = None):
 
                 if tran_bn_id_idx == cand_bn_id_idx and (tokens_are_different or bn_ids_are_equal):
                     bn_ids_window.append(candidate_bn_ids[i])
-                    wsd_lm_scores_window.append(wsd_lm_scores[ii][i])
+                    scores_window.append(scores[ii][i])
                     indices_window.append(indices[ii])
                     tokens_window.append(tokens[ii])
 
         if any([id for id in bn_ids_window if id != bn_ids_window[0]]):
             if threshold is None:
                 if ARGMIN:
-                    min_idx = np.argmin(wsd_lm_scores_window)
-                    beams_to_filer.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                    min_idx = np.argmin(scores_window)
+                    beams_to_filter.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
                 else:
-                    min_value = min(wsd_lm_scores_window)
-                    for el_index, el in enumerate(wsd_lm_scores_window):
+                    min_value = min(scores_window)
+                    for el_index, el in enumerate(scores_window):
                         if el == min_value:
-                            beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
+                            beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
             else:
-                max_value = max(wsd_lm_scores_window)
-                for el_index, el in enumerate(wsd_lm_scores_window):
+                max_value = max(scores_window)
+                for el_index, el in enumerate(scores_window):
                     delta = max_value - el
                     if delta > threshold:
-                        beams_to_filer.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
+                        beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
 
-    return beams_to_filer
+    return beams_to_filter
 
 
 def load_pretrained_model(local_dumps_dir: str, hf_model_url: str) \
@@ -248,15 +239,16 @@ def filter_beam_search(decoder: BeamSearchDecoderCTC, threshold: int, wsd_sample
     if hf_sample["id"] in wsd_samples:
 
         if SCORER == _PMI:
-            if pmi is None:
-                raise ValueError("pmi object is None")
-            beams_to_filer = compute_beams_to_filter_pmi(pmi, list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
+            if _PMI["mode"] == "average":
+                beams_to_filter = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold, mode="pmi", pmi=pmi)
+            else:
+                beams_to_filter = compute_beams_to_filter_pmi_1_vs_all(list_to_dict(samples[hf_sample["id"]]), threshold=threshold, pmi=pmi)
         elif SCORER == LANGUAGE_MODEL:
-            beams_to_filer = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold)
+            beams_to_filter = compute_beams_to_filter(list_to_dict(samples[hf_sample["id"]]), threshold=threshold, mode="lm")
         else:
             raise ValueError(f"scorer {SCORER} not supported")
 
-        output_beams = decoder.decode_beams(forward(hf_sample).cpu().numpy(), beams_to_filter=beams_to_filer)
+        output_beams = decoder.decode_beams(forward(hf_sample).cpu().numpy(), beams_to_filter=beams_to_filter)
         candidates = [x[0] for x in output_beams]
         transcription = output_beams[0][0] if len(output_beams) > 0 else ""
 
