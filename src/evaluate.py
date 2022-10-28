@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import wandb
 from jiwer import wer, wil
+from pprint import pprint
 from transformers import AutoModelForCTC, AutoProcessor, Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2ProcessorWithLM
 
 from pyctcdecode_local import BeamSearchDecoderCTC
@@ -298,6 +299,9 @@ def parse_args() -> argparse.Namespace:
     # required
     parser.add_argument("-m", "--model", type=str, required=True, choices=["base", "large-self"])
     # default + not required
+    parser.add_argument("-s", "--scorer", type=str, choices=["lm", "pmi"], default="lm")
+    parser.add_argument("-p", "--pmi-mode", type=str, choices=["average", "1-vs-all"], default="average")
+    parser.add_argument("-t", "--threshold", type=float, default=None)
     parser.add_argument("-w", "--wandb", action="store_true", default=False)
 
     return parser.parse_args()
@@ -331,14 +335,14 @@ if __name__ == "__main__":
     
     _PMI = {
         "type": "WSD Pointwise Mutual Information",
-        "mode": "average",
+        "mode": args.pmi_mode,
         "train_corpora": TRAIN_CORPORA
     }
     
-    SCORER = _PMI
+    SCORER = _PMI if args.scorer == "pmi" else LANGUAGE_MODEL
     
     INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
-    THRESHOLD = threshold = None
+    THRESHOLD = args.threshold
     ARGMIN = True
 
     BS_FILTERING = {
@@ -355,20 +359,22 @@ if __name__ == "__main__":
         "beam_search_filtering_settings": BS_FILTERING if SCORER is not None else None
     }
     
-    scorer = '-pmi' if SCORER == _PMI else '-lm'
+    pprint(CONFIG)
     
-    ksw = '-ksw2' if BS_FILTERING['keep_same_words'] else ''
+    scorer = f'-pmi-{"1vsall" if _PMI["mode"] == "1-vs-all" else ""}' if SCORER == _PMI else '-lm'
+    
+    ksw = 'ksw2' if BS_FILTERING['keep_same_words'] else ''
     
     if MODEL == BASE:
-        if threshold is not None:
-            RUN_NAME=f"wav2vec2-base{scorer}-bs-thresholded-{THRESHOLD}{ksw}"
+        if THRESHOLD is not None:
+            RUN_NAME=f"wav2vec2-base{scorer}-bs-thresholded-{THRESHOLD}-{ksw}"
         else:
-            RUN_NAME=f"wav2vec2-base{scorer}-bs-{'min' if not ARGMIN else 'argmin'}{ksw}"
+            RUN_NAME=f"wav2vec2-base{scorer}-bs-{'min' if not ARGMIN else 'argmin'}-{ksw}"
     else:
-        if threshold is not None:
-            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-thresholded-{THRESHOLD}{ksw}"
+        if THRESHOLD is not None:
+            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-thresholded-{THRESHOLD}-{ksw}"
         else:
-            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-{'min' if not ARGMIN else 'argmin'}{ksw}"
+            RUN_NAME=f"wav2vec2-large-self{scorer}-bs-{'min' if not ARGMIN else 'argmin'}-{ksw}"
 
     print("=== Loading LibriSpeech test set ===")
 
@@ -409,9 +415,9 @@ if __name__ == "__main__":
     # map_function = wsdmodel.beam_search
 
     if THRESHOLD is not None:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_thresholded_{THRESHOLD}_nosamewords2"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_thresholded_{THRESHOLD}_{ksw}"
     else:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_{'min' if not ARGMIN else 'argmin'}_nosamewords2"
+        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}{scorer}-filtered_bs_{'min' if not ARGMIN else 'argmin'}_{ksw}"
 
     preds = dict()
     preds["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
