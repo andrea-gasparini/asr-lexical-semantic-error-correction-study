@@ -96,7 +96,7 @@ pyarrow==9.0.0
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
 pycparser==2.21
-pyctcdecode==0.4.0
+pyctcdecode @ https://github.com/andrea-gasparini/pyctcdecode/archive/master.zip
 pydeck==0.8.0b3
 pyDeprecate==0.3.2
 Pygments==2.13.0

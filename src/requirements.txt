@@ -8,9 +8,9 @@ soundfile
 transformers
 datasets
 tqdm
-pyctcdecode
 streamlit
 jupyter
 notebook
 wandb
 kenlm @ https://github.com/kpu/kenlm/archive/master.zip
+pyctcdecode @ https://github.com/andrea-gasparini/pyctcdecode/archive/master.zip
