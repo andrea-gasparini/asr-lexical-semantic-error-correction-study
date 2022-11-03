@@ -7,15 +7,14 @@ import stanza
 from tqdm import tqdm
 
 from constants import *
-from models import Wav2Vec2WithLM
-from evaluate import load_pretrained_model
+from models import Wav2Vec2WithLM, load_pretrained_model
 from utils import synsets_from_lemmapos, pos_map
 
 
 def generate_librispeech_predictions(hf_model_name: str = "facebook/wav2vec2-base-960h",
                                      predictions_dir: str = f"{DATA_DIR}predictions") -> None:
     model_name = hf_model_name.split("/")[1]
-    model, processor = load_pretrained_model(MODELS_DIR, hf_model_name)
+    model, processor = load_pretrained_model(hf_model_name)
     w2v2 = Wav2Vec2WithLM(model, processor, f"{NGRAM_PATH}librispeech/4-gram")
     
     ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
