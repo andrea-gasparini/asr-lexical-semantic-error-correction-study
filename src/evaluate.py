@@ -166,14 +166,14 @@ if __name__ == "__main__":
 
     print("Done!")
 
-    print("=== Loading ranked LibriSpeech test set ===")
+    print("=== Loading scored LibriSpeech test set ===")
 
     if "jsonl_wsd" in LANGUAGE_MODEL["train_corpora"]:
         if "SemCor" in LANGUAGE_MODEL["train_corpora"] and "OMSTI" in LANGUAGE_MODEL["train_corpora"]:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_ranked+semcor+omsti.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored+semcor+omsti.json") as f:
                 samples = json.load(f)
         else:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_ranked.json") as f:
+            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored.json") as f:
                 samples = json.load(f)
 
     print("Done!")
