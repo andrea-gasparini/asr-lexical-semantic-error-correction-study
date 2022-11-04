@@ -3,7 +3,7 @@ import streamlit as st
 import json
 from constants import *
 
-with open(f"{DATA_DIR}/librispeech/librispeech_test_all_ranked.json") as f:
+with open(f"{DATA_PATH}/librispeech/librispeech_test_all_scored.json") as f:
 	samples = json.load(f)
 
 
@@ -59,8 +59,8 @@ k, v = list(wsd_differences_samples.items())[sample_index]
 
 import datasets
 
-ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
-ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_clean")
+ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_other")
+ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_clean")
 ls_test_all = datasets.concatenate_datasets([ls_test_clean, ls_test_other])
 
 original_texts = {v["id"]: v["text"] for v in ls_test_all}

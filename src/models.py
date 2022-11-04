@@ -6,12 +6,12 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2ProcessorWit
 from transformers.modeling_outputs import CausalLMOutput
 from pyctcdecode import BeamSearchDecoderCTC
 
-from constants import MODELS_DIR
+from constants import MODELS_PATH
 from utils.metrics import PointwiseMutualInformation as PMI
 from utils import list_to_dict
 
 
-def load_pretrained_model(hf_model_name: str, local_dumps_dir: str = MODELS_DIR) -> Tuple[AutoModelForCTC, AutoProcessor]:
+def load_pretrained_model(hf_model_name: str, local_dumps_path: str = MODELS_PATH) -> Tuple[AutoModelForCTC, AutoProcessor]:
     """
     Loads an Hugging Face pretrained model from the hub and saves a local dump of it to the specified directory.
     When a model has previosuly been dumped locally, the function directly loads it without any downloads from the hub.
@@ -19,14 +19,14 @@ def load_pretrained_model(hf_model_name: str, local_dumps_dir: str = MODELS_DIR)
     Args:
         hf_model_name (`str`):
             Model's name in Hugging Face, e.g. "facebook/wav2vec2-base-960h".
-        local_dumps_dir (`str`, optional, defaults to `MODELS_DIR`)
-            Directory where to save the model's dump.
+        local_dumps_path (`str`, optional, defaults to `MODELS_PATH`)
+            Path to the directory in which save the model's dump.
 
     Returns:
         `Tuple[AutoModelForCTC, AutoProcessor]`:
             A pair of pretrained model and processor.
     """
-    local_dump_path = os.path.join(local_dumps_dir, hf_model_name)
+    local_dump_path = os.path.join(local_dumps_path, hf_model_name)
 
     if not os.path.isdir(local_dump_path):
         model = AutoModelForCTC.from_pretrained(hf_model_name).to("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,7 +128,7 @@ class Wav2Vec2WithWSD(Wav2Vec2WithLM):
         
     def __compute_sample_ids_to_filter(self, most_probable_candidates: bool) -> Set[str]:
         """
-            Computes the sample ids for which the beam search will have to look for possible beams to filter.
+        Computes the sample ids for which the beam search will have to look for possible beams to filter.
 
         Args:
             most_probable_candidates (`bool`):

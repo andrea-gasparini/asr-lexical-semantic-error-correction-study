@@ -1,0 +1,15 @@
+datasets
+jiwer
+jupyter
+kenlm @ https://github.com/kpu/kenlm/archive/master.zip
+librosa
+nltk
+notebook
+pyctcdecode @ https://github.com/andrea-gasparini/pyctcdecode/archive/master.zip
+soundfile
+stanza
+streamlit
+torch
+tqdm
+transformers
+wandb
