@@ -16,13 +16,10 @@ from utils.wsd import SenseInventory, synsets_from_lemmapos, pos_map, read_wsd_k
 from utils.os import stem_basename_suffix
 
 
-PREDICTIONS_PATH = f"{DATA_DIR}predictions/"
-
-
 def generate_librispeech_predictions(hf_model_name: str, predictions_path: str = PREDICTIONS_PATH) -> None:
-    w2v2 = Wav2Vec2WithLM.from_pretrained(hf_model_name, f"{NGRAM_PATH}librispeech/4-gram")
-    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
-    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_clean")
+    w2v2 = Wav2Vec2WithLM.from_pretrained(hf_model_name, f"{NGRAMS_PATH}librispeech/4-gram")
+    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_other")
+    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_clean")
     
     model_name = hf_model_name.split("/")[1]
     for dataset, dataset_name in [(ls_test_other, "test_other"), (ls_test_clean, "test_clean")]:       
@@ -131,9 +128,9 @@ def compute_wsd_dataset(dataset: datasets.Dataset, dataset_name: str, model_name
     
 def compute_wsd_scores(xml_data_path: str, txt_keys_path: str, wsd_ngram_model_path: str, wsd_pmi_attrs_path: str) -> None:
     """
-        Computes PMI and LM scores of the senses from the given WSD corpus (computed through `compute_wsd_dataset`),
-        based on the predictions of a WSD model contained in the given keys file,
-        and dumps a json grouped by their "sentence_id" attribute.
+    Computes PMI and LM scores of the senses from the given WSD corpus (computed through `compute_wsd_dataset`),
+    based on the predictions of a WSD model contained in the given keys file,
+    and dumps a json grouped by their "sentence_id" attribute.
 
     Args:
         xml_data_path (`str`):

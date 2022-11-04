@@ -2,7 +2,7 @@ import argparse
 from collections import Counter
 import datasets, torch
 
-from constants import DATA_DIR
+from constants import DATA_PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, required=True, choices=["base", "large-self"])
@@ -19,12 +19,12 @@ elif args.model == "large-self":
 THRESHOLD, THRESHOLD_VALUE = None, 0.75
 PREDICTIONS_NAME = f"filtered_bs_thresholded_{THRESHOLD_VALUE}_nosamewords" if THRESHOLD else "filtered_bs_argmin_nosamewords"
 
-ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{MODEL_NAME}-test_other")
-ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{MODEL_NAME}-test_clean")
+ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{MODEL_NAME}-test_other")
+ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{MODEL_NAME}-test_clean")
 ls_test_all = datasets.concatenate_datasets([ls_test_clean, ls_test_other])
 
-filtered_beam_search_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{MODEL_NAME}-{PREDICTIONS_NAME}-test_other")
-filtered_beam_search_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{MODEL_NAME}-{PREDICTIONS_NAME}-test_clean")
+filtered_beam_search_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{MODEL_NAME}-{PREDICTIONS_NAME}-test_other")
+filtered_beam_search_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{MODEL_NAME}-{PREDICTIONS_NAME}-test_clean")
 filtered_beam_search = datasets.concatenate_datasets([filtered_beam_search_clean, filtered_beam_search_other])
 
 wrong_transcriptions_cnt, first_is_most_probable_both_cnt, wrong_transcription_changed_after_bsfiltering_cnt, correct_transcription_changed_after_bsfiltering_cnt, cnt, cnt2 = 0, 0, 0, 0, 0, 0

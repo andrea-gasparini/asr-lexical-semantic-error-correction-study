@@ -9,12 +9,12 @@ from pprint import pprint
 
 from constants import *
 from models import load_pretrained_model, Wav2Vec2WithWSD, Wav2Vec2WithLM
-from utils.metrics import PointwiseMutualInformation as PMI
+from utils.metrics import PointwiseMutualInformation
 
 
 def compute_transcriptions_metrics(model_name: str, filtered_predictions_all: datasets.Dataset) -> Dict[str, float]:
-    predictions_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{model_name}-test_other")
-    predictions_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}predictions/{model_name}-test_clean")
+    predictions_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{model_name}-test_other")
+    predictions_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}predictions/{model_name}-test_clean")
     predictions_all = datasets.concatenate_datasets([predictions_other, predictions_clean])
     
     corrected_transcriptions_cnt = 0
@@ -95,6 +95,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-p", "--pmi-mode", type=str, choices=["average", "1-vs-all"], default="average")
     parser.add_argument("-t", "--threshold", type=float, default=None)
     parser.add_argument("-w", "--wandb", action="store_true", default=False)
+    parser.add_argument("-d", "--dump", action="store_true", default=False)
+    parser.add_argument("--all-min", action="store_true", default=False)
+    parser.add_argument("--filter-most-probable-candidates", action="store_true", default=False)
 
     return parser.parse_args()
 
@@ -125,17 +128,17 @@ if __name__ == "__main__":
         "train_corpora": TRAIN_CORPORA
     }
     
-    _PMI = {
+    PMI = {
         "type": "WSD Pointwise Mutual Information",
         "mode": args.pmi_mode,
         "train_corpora": TRAIN_CORPORA
     }
     
-    SCORER = _PMI if args.scorer == "pmi" else LANGUAGE_MODEL
+    SCORER = PMI if args.scorer == "pmi" else LANGUAGE_MODEL
     
-    INCLUDE_MOST_PROBABLE_CANDIDATES: bool = True
+    INCLUDE_MOST_PROBABLE_CANDIDATES = not args.filter_most_probable_candidates
     THRESHOLD = args.threshold
-    ARGMIN = True
+    ARGMIN = not args.all_min
 
     BS_FILTERING = {
         "criterion": "threshold" if THRESHOLD is not None else "min" if not ARGMIN else "argmin",
@@ -144,7 +147,7 @@ if __name__ == "__main__":
         "include_most_probable_candidates": INCLUDE_MOST_PROBABLE_CANDIDATES
     }
     
-    scorer = f'-pmi{"-1vsall" if _PMI["mode"] == "1-vs-all" else ""}' if SCORER == _PMI else '-lm'
+    scorer = f'-pmi{"-1vsall" if PMI["mode"] == "1-vs-all" else ""}' if SCORER == PMI else '-lm'
     
     ksw = 'ksw2' if BS_FILTERING['keep_same_words'] else ''
     
@@ -161,8 +164,8 @@ if __name__ == "__main__":
 
     print("=== Loading LibriSpeech test set ===")
 
-    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_other")
-    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_DIR}librispeech/librispeech_test_clean")
+    ls_test_other = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_other")
+    ls_test_clean = datasets.Dataset.load_from_disk(f"{DATA_PATH}librispeech/librispeech_test_clean")
 
     print("Done!")
 
@@ -170,21 +173,21 @@ if __name__ == "__main__":
 
     if "jsonl_wsd" in LANGUAGE_MODEL["train_corpora"]:
         if "SemCor" in LANGUAGE_MODEL["train_corpora"] and "OMSTI" in LANGUAGE_MODEL["train_corpora"]:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored+semcor+omsti.json") as f:
+            with open(f"{DATA_PATH}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored+semcor+omsti.json") as f:
                 samples = json.load(f)
         else:
-            with open(f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored.json") as f:
+            with open(f"{DATA_PATH}predictions/{MODEL_NAME}-4-gram-librispeech_test_all_scored.json") as f:
                 samples = json.load(f)
 
     print("Done!")
 
     print("=== Loading pre-trained Wav2Vec 2.0 model ===")
     
-    pmi = PMI.load_from_dir(f"{MODELS_DIR}pmi/jsonl.json") if args.scorer == "pmi" else None
+    pmi = PointwiseMutualInformation.load_from_dir(f"{MODELS_PATH}pmi/pmi.json") if args.scorer == "pmi" else None
     pretrained_model, pretrained_processor = load_pretrained_model(MODEL)
-    model = Wav2Vec2WithWSD(pretrained_model, pretrained_processor, f"{NGRAM_PATH}librispeech/4-gram", samples,
-                             include_most_probable_candidates=INCLUDE_MOST_PROBABLE_CANDIDATES,
-                             threshold=THRESHOLD, argmin=ARGMIN, pmi=pmi, pmi_mode=_PMI["mode"])
+    model = Wav2Vec2WithWSD(pretrained_model, pretrained_processor, f"{NGRAMS_PATH}librispeech/4-gram", samples,
+                            include_most_probable_candidates=INCLUDE_MOST_PROBABLE_CANDIDATES,
+                            threshold=THRESHOLD, argmin=ARGMIN, pmi=pmi, pmi_mode=PMI["mode"])
     
     CONFIG = {
         "model": MODEL,
@@ -202,16 +205,18 @@ if __name__ == "__main__":
     map_function = model.filtered_beam_search
 
     if THRESHOLD is not None:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram{scorer}-filtered_bs_thresholded_{THRESHOLD}_{ksw}"
+        base_save_path = f"{DATA_PATH}predictions/{MODEL_NAME}-4-gram{scorer}-filtered_bs_thresholded_{THRESHOLD}_{ksw}"
     else:
-        base_save_path = f"{DATA_DIR}predictions/{MODEL_NAME}-4-gram{scorer}-filtered_bs_{'min' if not ARGMIN else 'argmin'}_{ksw}"
+        base_save_path = f"{DATA_PATH}predictions/{MODEL_NAME}-4-gram{scorer}-filtered_bs_{'min' if not ARGMIN else 'argmin'}_{ksw}"
 
     preds = dict()
     preds["other"] = ls_test_other.map(map_function, remove_columns=["file", "audio"])
-    preds["other"].save_to_disk(f"{base_save_path}-test_other")
     preds["clean"] = ls_test_clean.map(map_function, remove_columns=["file", "audio"])
-    preds["clean"].save_to_disk(f"{base_save_path}-test_clean")
     preds["all"] = datasets.concatenate_datasets([preds["other"], preds["clean"]])
+    
+    if args.dump:
+        preds["other"].save_to_disk(f"{base_save_path}-test_other")
+        preds["clean"].save_to_disk(f"{base_save_path}-test_clean")
 
     if args.wandb:
 

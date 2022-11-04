@@ -54,9 +54,12 @@ def read_wsd_keys(txt_keys_path: str) -> Dict[str, str]:
     and parses it into a dictionary that goes from tokens ids to wordnet lemma keys.
 
     Args:
-        txt_keys_path: txt keys file
+        txt_keys_path (`str`):
+            Path to a txt labels keys file.
 
-    Returns: tokens ids to wordnet lemma keys dictionary
+    Returns:
+        `Dict[str, str]`:
+            Dictionary from token ids to wordnet lemma keys.
     """
     if not os.path.isfile(txt_keys_path):
         raise ValueError(f"{txt_keys_path} is not a valid txt keys file")

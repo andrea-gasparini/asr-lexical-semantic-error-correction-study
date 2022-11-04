@@ -23,19 +23,20 @@ def get_num_lines(file_name: str) -> int:
     return count
 
 
-def ext_is_in_dir(extension: str, dir_to_list: str, mode: Literal["any", "all"] = "any") -> bool:
+def ext_is_in_dir(extension: str, directory: str, mode: Literal["any", "all"] = "any") -> bool:
     """Checks that the files in the given directory have the given extension."""
+    elements_end_with_extension = [el.endswith(extension) for el in os.listdir(directory)]
     if mode == "any":
-        return any([el.endswith(extension) for el in os.listdir(dir_to_list)])
+        return any(elements_end_with_extension)
     elif mode == "all":
-        return all([el.endswith(extension) for el in os.listdir(dir_to_list)])
+        return all(elements_end_with_extension)
     else:
         raise ValueError(f"mode {mode} not supported")
 
 
 def stem_basename_suffix(path: str) -> str:
-    stemmed_path = Path(path).stem
-    return path if path == stemmed_path else stem_basename_suffix(stemmed_path)
+    basename = get_basename(path)
+    return basename[:basename.find(".")]
 
 
 def get_basename(path: str) -> str:

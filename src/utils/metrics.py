@@ -15,8 +15,8 @@ class PointwiseMutualInformation:
     JSON_ATTRS = ("source_file_path", "unigram_frequences", "bigram_frequences")
 
     def __init__(self, source_file_path: str,
-                 unigram_frequences: Optional[Dict] = None,
-                 bigram_frequences: Optional[Dict] = None) -> None:
+                 unigram_frequences: Optional[Dict[str, int]] = None,
+                 bigram_frequences: Optional[Dict[str, int]] = None) -> None:
 
         self.source_file_path = source_file_path
 
@@ -31,9 +31,6 @@ class PointwiseMutualInformation:
         self.__sum_unigram_frequences = float(sum(self.unigram_frequences.values()))
         self.__sum_bigram_frequences = float(sum(self.bigram_frequences.values()))
 
-    def __call__(self, token1: str, token2: str) -> float:
-        return self.pmi(token1, token2)
-    
     def __contains__(self, token: str) -> bool:
         if len(token.split(" ")) == 2:
             return token in self.bigram_frequences
@@ -85,7 +82,7 @@ class PointwiseMutualInformation:
         """
         if f"{token1} {token2}" not in self:
             raise ValueError("Token not contained in the training corpus. Can not compute PMI.")
-        prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / float(sum(self.bigram_frequences.values()))
+        prob_token1_token2 = self.bigram_frequences[f"{token1} {token2}"] / self.__sum_bigram_frequences
         return self.pmi(token1, token2) / -math.log(prob_token1_token2, 2)
 
     def compute_average_pmi(self, token_idx: int, tokens: List[str]) -> float:

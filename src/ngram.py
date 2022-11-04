@@ -22,10 +22,14 @@ def extract_wsd_labels_raganato(sense_ids_file_path: str, xml_data_path: str, tx
     [Word Sense Disambiguation: A Unified Evaluation Framework and Empirical Comparison](https://www.aclweb.org/anthology/E17-1010/).
 
     Args:
-        sense_ids_file_path: a path where to save the file with the extracted sense ids
-        xml_data_path: xml data file
-        txt_keys_path: txt keys file
-        write_mode: opening file mode, either "a" for appending or "w" for writing from scratch
+        sense_ids_file_path (`str`):
+            Path to the directory in which to save the file with the extracted sense ids
+        xml_data_path (`str`):
+            Path to an xml WSD corpus.
+        txt_keys_path (`str`):
+            Path to a txt labels keys file.
+        write_mode (`Literal["a", "w"]`, optional, defaults to "w"):
+            Opening file mode, either "a" for appending or "w" for writing from scratch
     """
     if not os.path.isfile(xml_data_path):
         raise ValueError(f"{xml_data_path} is not a valid xml data file")
@@ -58,9 +62,12 @@ def extract_wsd_labels_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: s
     Extracts the sense ids' sequences of each sample from a WSD jsonl dataset and writes them to a file, one per line.
 
     Args:
-        sense_ids_file_path: a path where to save the file with the extracted sense ids
-        jsonl_wsd_dataset_path: either a path to a directory containing batches of the dataset or to a single jsonl file
-        write_mode: opening file mode, either "a" for appending or "w" for writing from scratch
+        sense_ids_file_path (`str`):
+            Path to the directory in which to save the file with the extracted sense ids.
+        jsonl_wsd_dataset_path (`str`):
+            Either a path to a directory containing batches of the dataset or to a single jsonl file.
+        write_mode (`Literal["a", "w"]`, optional, defaults to "w"):
+            Opening file mode, either "a" for appending or "w" for writing from scratch.
     """
     with open(sense_ids_file_path, write_mode) as file:
 
@@ -88,29 +95,78 @@ def extract_wsd_labels_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: s
                     file.write(f"{joined_sense_ids}\n")
 
 
-def postprocess_ngram(ngram_path: str, ngram_size: int) -> str:
+def check_kenlm_setup(kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
     """
-    Post-processes the .arpa n-gram file of size `ngram_size` from the directory `ngram_path`.
+    Verifies that a build directory for KenLM already exists, runs the setup script otherwise.
 
-    This is necessary in order to use the n-gram with 🤗 Transformers.
+    Args:
+        kenlm_bin_path (`str`, optional, defaults to `KENLM_BIN_PATH`):
+            Path to the build directory of KenLM.
+    """
+    if not os.path.isdir(kenlm_bin_path):
+        os.system(f"bash {KENLM_SETUP_SCRIPT_PATH}")
+
+
+def build_ngram(ngram_size: int, ngram_file_path: str, source_txt_file_path: str,
+                kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
+    """
+    Runs the `lmplz` KenLM's script to build a n-gram Language Model and dump it to a .arpa file.
+
+    Args:
+        ngram_size (`int`):
+            Size of the n-gram to build.
+        ngram_file_path (`str`):
+            Path to the LM's dump file name we want to create, comprising the .arpa extension.
+        source_txt_file_path (`str`):
+            Path to the source txt file, containing the tokens of one sample per line.
+        kenlm_bin_path (`str`, optional, defaults to `KENLM_BIN_PATH`):
+            Path to the build directory of KenLM.
+    """
+    check_kenlm_setup(kenlm_bin_path)
+    os.system(f"{kenlm_bin_path}lmplz -T /tmp -o {ngram_size} < {source_txt_file_path} > {ngram_file_path}")
+
+
+def build_binary_ngram(ngram_file_path: str, kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
+    """
+    Runs the `build_binary` KenLM's script to compress a .arpa n-gram Language Model into a binary file. 
+
+    Args:
+        ngram_file_path (`str`):
+            Path to the LM's .arpa file from which to build the binary one.
+        kenlm_bin_path (`str`, optional, defaults to `KENLM_BIN_PATH`):
+            Path to the build directory of KenLM.
+    """
+    check_kenlm_setup(kenlm_bin_path)
+    binary_ngram_file_name = f"{stem_basename_suffix(ngram_file_path)}.binary"
+    binary_ngram_file_path = os.path.join(os.path.dirname(ngram_file_path), binary_ngram_file_name)
+    os.system(f"{kenlm_bin_path}build_binary -T /tmp {ngram_file_path} {binary_ngram_file_path}")
+    
+
+def postprocess_ngram(ngram_file_path: str) -> str:
+    """
+    Post-processes the .arpa n-gram from the given directory in order to use the n-gram in 🤗 Transformers.
     The KenLM n-gram correctly includes an "Unknown" or <unk>, as well as a begin-of-sentence, <s> token,
-    but no end-of-sentence, </s> token.
+    but no end-of-sentence, </s> token; which is needed in the Transformers library.
 
     We simply add the end-of-sentence token by adding the line "0 </s> $begin_of_sentence_score" below the <s> token
     and increasing the n-gram 1 count by 1.
+    
+    Args:
+        ngram_file_path (`str`):
+            Path to the .arpa n-gram file.
 
     Returns:
-        the path to the newly created .arpa n-gram file
+        `str`:
+            Path to the newly created .arpa n-gram file.
     """
 
-    file_prefix = f"{ngram_path}{ngram_size}gram"
-    postprocessed_file_path = f"{file_prefix}_hf.arpa"
+    postprocessed_file_path = f"{stem_basename_suffix(ngram_file_path)}_hf.arpa"
 
-    with open(f"{file_prefix}.arpa", "r") as read_file, open(postprocessed_file_path, "w") as write_file:
+    with open(ngram_file_path, "r") as read_file, open(postprocessed_file_path, "w") as write_file:
 
         has_added_eos = False
 
-        for line in tqdm(read_file, total=get_num_lines(f"{file_prefix}.arpa")):
+        for line in tqdm(read_file, total=get_num_lines(ngram_file_path)):
 
             if not has_added_eos and "ngram 1=" in line:
                 count = line.strip().split("=")[-1]
@@ -127,32 +183,15 @@ def postprocess_ngram(ngram_path: str, ngram_size: int) -> str:
     return postprocessed_file_path
 
 
-def check_kenlm_setup(kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
-    if not os.path.isdir(kenlm_bin_path):
-        os.system(f"bash {KENLM_SETUP_SCRIPT_PATH}")
-
-
-def build_ngram(ngram_size: int, ngram_file_path: str, sense_ids_file_path: str,
-                kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
-    check_kenlm_setup(kenlm_bin_path)
-    os.system(f"{kenlm_bin_path}lmplz -o {ngram_size} < {sense_ids_file_path} > {ngram_file_path}")
-
-
-def build_binary_ngram(ngram_file_path: str, kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
-    check_kenlm_setup(kenlm_bin_path)
-    ngram_path = os.path.dirname(ngram_file_path)
-    binary_ngram_file_name = f"{stem_basename_suffix(ngram_file_path)}.binary"
-    os.system(f"{kenlm_bin_path}build_binary -T /tmp {ngram_file_path} {ngram_path}/{binary_ngram_file_name}")
-
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("KenLM WSD n-gram generator for 🤗 Transformers")
+    parser = argparse.ArgumentParser("KenLM sense-level n-gram generator")
     # required
     parser.add_argument("--wsd-dataset-paths", type=str, nargs="+", required=True)
     # default + not required
-    parser.add_argument("--ngram-path", type=str, default=NGRAM_PATH)
+    parser.add_argument("--ngram-path", type=str, default=NGRAMS_PATH)
     parser.add_argument("-s", "--ngram-size", type=int, default=NGRAM_SIZE)
-    parser.add_argument("-b", "--binary", action="store_true")
+    parser.add_argument("-b", "--binary", action="store_true", default=False)
+    parser.add_argument("-p", "--post-process", action="store_true", default=False)
 
     return parser.parse_args()
 
@@ -162,8 +201,8 @@ def main() -> None:
 
     ngram_size = args.ngram_size
     ngram_path = args.ngram_path
-    ngram_file_path = f"{ngram_path}{ngram_size}gram.arpa"
-    sense_ids_file_path = f"{ngram_path}{SENSE_IDS_FILENAME}"
+    ngram_file_path = os.path.join(ngram_path, f"{ngram_size}gram.arpa")
+    sense_ids_file_path = os.path.join(ngram_path, SENSE_IDS_FILENAME)
 
     check_kenlm_setup()
 
@@ -190,15 +229,15 @@ def main() -> None:
 
     if args.binary:
         print(f"=== Building binary n-gram from {get_basename(ngram_file_path)} ===")
-        build_binary_ngram(ngram_file_path)
+        build_binary_ngram(ngram_file_path)    
 
-    print("=== Fixing KenLM format as expected in 🤗 Transformers ===")
+    if args.post_process:
+        print("=== Fixing KenLM format as expected in 🤗 Transformers ===")
+        hf_ngram_file_path = postprocess_ngram(ngram_file_path)
 
-    hf_ngram_file_path = postprocess_ngram(ngram_path=ngram_path, ngram_size=ngram_size)
-
-    if args.binary:
-        print(f"=== Building binary n-gram from {get_basename(hf_ngram_file_path)} ===")
-        build_binary_ngram(hf_ngram_file_path)
+        if args.binary:
+            print(f"=== Building binary n-gram from {get_basename(hf_ngram_file_path)} ===")
+            build_binary_ngram(hf_ngram_file_path)
 
 
 if __name__ == "__main__":
