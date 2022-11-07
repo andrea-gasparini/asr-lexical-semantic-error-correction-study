@@ -205,6 +205,7 @@ class Wav2Vec2WithWSD(Wav2Vec2WithLM):
             tran_bn_id_idx = indices[0][i]
             tran_tokens = tokens[0]
 
+            tmp = [i]
             bn_ids_window = [transcription_bn_id]
             scores_window = [scores[0][i]]
             indices_window = [indices[0]]
@@ -216,20 +217,27 @@ class Wav2Vec2WithWSD(Wav2Vec2WithLM):
                 if ii == 0:
                     continue
 
-                if len(candidate_bn_ids) > i:
-                    
-                    if self.pmi is not None and candidate_bn_ids[i] not in self.pmi.unigram_frequences:
-                        continue
-                    
-                    cand_bn_id_idx = indices[ii][i]
+                if len(candidate_bn_ids) > i or self.pmi is not None:
+
                     cand_tokens = tokens[ii]
 
+                    if self.pmi is None:
+                        cand_sense_idx = i
+                        cand_bn_id_idx = indices[ii][cand_sense_idx]
+                    else:
+                        bn_id_idx_pairs = ((idx, j) for j, idx in enumerate(indices[ii]) if idx == tran_bn_id_idx)
+                        cand_bn_id_idx, cand_sense_idx = next(bn_id_idx_pairs, (None, None))      
+
+                    if cand_bn_id_idx is None or self.pmi is not None and candidate_bn_ids[cand_sense_idx] not in self.pmi:
+                        continue
+
                     tokens_are_different = tran_tokens[tran_bn_id_idx] != cand_tokens[cand_bn_id_idx]
-                    bn_ids_are_equal = transcription_bn_id == candidate_bn_ids[i]
+                    bn_ids_are_equal = transcription_bn_id == candidate_bn_ids[cand_sense_idx]
 
                     if tran_bn_id_idx == cand_bn_id_idx and (tokens_are_different or bn_ids_are_equal):
-                        bn_ids_window.append(candidate_bn_ids[i])
-                        scores_window.append(scores[ii][i])
+                        tmp.append(cand_sense_idx)
+                        bn_ids_window.append(candidate_bn_ids[cand_sense_idx])
+                        scores_window.append(scores[ii][cand_sense_idx])
                         indices_window.append(indices[ii])
                         tokens_window.append(tokens[ii])
 
@@ -237,18 +245,18 @@ class Wav2Vec2WithWSD(Wav2Vec2WithLM):
                 if self.threshold is None:
                     if self.argmin:
                         min_idx = torch.argmin(torch.tensor(scores_window))
-                        beams_to_filter.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][i] + 1]))
+                        beams_to_filter.append(" ".join(tokens_window[min_idx][:indices_window[min_idx][tmp[min_idx]] + 1]))
                     else:
                         min_value = min(scores_window)
                         for el_index, el in enumerate(scores_window):
                             if el == min_value:
-                                beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
+                                beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][tmp[min_idx]] + 1]))
                 else:
                     max_value = max(scores_window)
                     for el_index, el in enumerate(scores_window):
                         delta = max_value - el
                         if delta > self.threshold:
-                            beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][i] + 1]))
+                            beams_to_filter.append(" ".join(tokens_window[el_index][:indices_window[el_index][tmp[min_idx]] + 1]))
 
         return beams_to_filter
 
@@ -280,6 +288,7 @@ class Wav2Vec2WithWSD(Wav2Vec2WithLM):
                     else:
                         # TODO can we do better than ignoring? (case w/ unseen pair in the train corpus)
                         continue
+                        # is_in_pmi = True
 
                 if not is_valid:				
                     if is_in_pmi:
