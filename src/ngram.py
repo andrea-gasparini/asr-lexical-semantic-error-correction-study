@@ -1,98 +1,11 @@
 import argparse
-import json
 import os
-from typing import List, Literal
-from xml.etree import ElementTree as ET
 
 from tqdm import tqdm
 
 from constants import *
+from extract_bn_ids import extract_bn_ids
 from utils import get_basename, get_num_lines, stem_basename_suffix
-from utils.os import ext_is_in_dir
-from utils.wsd import read_wsd_keys, SenseInventory
-
-
-def extract_wsd_labels_raganato(sense_ids_file_path: str, xml_data_path: str, txt_keys_path: str,
-                                write_mode: Literal["a", "w"] = "w") -> None:
-    """
-    Extracts the sense ids' sequences of each sample from a WSD dataset (following Raganato's format)
-    and writes them to a file, one per line. Skipping sentences which do not contain any tagged sense.
-    
-    The required format for the WSD dataset has been introduced by Raganato et al. (2017) in
-    [Word Sense Disambiguation: A Unified Evaluation Framework and Empirical Comparison](https://www.aclweb.org/anthology/E17-1010/).
-
-    Args:
-        sense_ids_file_path (`str`):
-            Path to the directory in which to save the file with the extracted sense ids
-        xml_data_path (`str`):
-            Path to an xml WSD corpus.
-        txt_keys_path (`str`):
-            Path to a txt labels keys file.
-        write_mode (`Literal["a", "w"]`, optional, defaults to "w"):
-            Opening file mode, either "a" for appending or "w" for writing from scratch
-    """
-    if not os.path.isfile(xml_data_path):
-        raise ValueError(f"{xml_data_path} is not a valid xml data file")
-
-    lemma_keys_dict = read_wsd_keys(txt_keys_path)
-
-    inventory = SenseInventory()
-
-    with open(sense_ids_file_path, write_mode) as file:
-        # iterate over <sentence> tags from the given xml file
-        for sent_xml in ET.parse(xml_data_path).iter('sentence'):
-            sense_ids: List[str] = list()
-            # for each inner xml token (either <instance> or <wf>)
-            for token_xml in sent_xml:
-                # consider only instance tokens (ignore all <wf>)
-                if token_xml.tag == "instance":
-                    token_id = token_xml.attrib.get("id")
-                    lemma_key = lemma_keys_dict.get(token_id, None)
-                    bn_sense_id = inventory.lemma_key_to_bn_id(lemma_key)
-                    sense_ids.append(bn_sense_id)
-
-            if len(sense_ids) > 0:
-                joined_sense_ids = " ".join(sense_ids)
-                file.write(f"{joined_sense_ids}\n")
-
-
-def extract_wsd_labels_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: str,
-                             write_mode: Literal["a", "w"] = "w") -> None:
-    """
-    Extracts the sense ids' sequences of each sample from a WSD jsonl dataset and writes them to a file, one per line.
-
-    Args:
-        sense_ids_file_path (`str`):
-            Path to the directory in which to save the file with the extracted sense ids.
-        jsonl_wsd_dataset_path (`str`):
-            Either a path to a directory containing batches of the dataset or to a single jsonl file.
-        write_mode (`Literal["a", "w"]`, optional, defaults to "w"):
-            Opening file mode, either "a" for appending or "w" for writing from scratch.
-    """
-    with open(sense_ids_file_path, write_mode) as file:
-
-        if os.path.isdir(jsonl_wsd_dataset_path):
-            batches = [os.path.join(jsonl_wsd_dataset_path, batch) for batch in os.listdir(jsonl_wsd_dataset_path)]
-        elif os.path.isfile(jsonl_wsd_dataset_path):
-            batches = [jsonl_wsd_dataset_path]
-        else:
-            raise ValueError(f"{jsonl_wsd_dataset_path} is neither a directory nor a file")
-
-        for batch in tqdm(batches):
-
-            with open(os.path.abspath(batch), "r") as wsd_data:
-
-                for jsonl_sample in wsd_data:
-                    jsonl_sample = json.loads(jsonl_sample)
-
-                    assert "labels" in jsonl_sample, f"Sample does not have a valid 'labels' key"
-
-                    labels: List[str] = [sense_id[0] for sense_id in jsonl_sample["labels"]]
-                    # remove lemma and POS from the id (only keeping "bn:{offset}{wn_pos}")
-                    sense_ids = [label.split("#")[0] for label in labels]
-                    joined_sense_ids = " ".join(sense_ids)
-
-                    file.write(f"{joined_sense_ids}\n")
 
 
 def check_kenlm_setup(kenlm_bin_path: str = KENLM_BIN_PATH) -> None:
@@ -208,20 +121,7 @@ def main() -> None:
 
     print("=== Extracting WSD labels from the datasets ===")
 
-    for i in tqdm(range(len(args.wsd_dataset_paths))):
-        dataset_path = args.wsd_dataset_paths[i]
-        write_mode = "a" if i > 0 else "w"
-        if os.path.isfile(dataset_path) or ext_is_in_dir(".jsonl", dataset_path, "all"):
-            extract_wsd_labels_jsonl(sense_ids_file_path=sense_ids_file_path, jsonl_wsd_dataset_path=dataset_path,
-                                     write_mode=write_mode)
-        elif (len(os.listdir(dataset_path)) == 2 and ext_is_in_dir(".data.xml", dataset_path)
-                and ext_is_in_dir(".key.txt", dataset_path)):
-            entries = [os.path.join(dataset_path, entry) for entry in os.listdir(dataset_path)]
-            data_path, keys_path = entries if entries[0].endswith(".data.xml") else reversed(entries)
-            extract_wsd_labels_raganato(sense_ids_file_path=sense_ids_file_path, xml_data_path=data_path,
-                                        txt_keys_path=keys_path, write_mode=write_mode)
-        else:
-            raise ValueError(f"{dataset_path} is not a valid directory to a Raganato or jsonl WSD dataset")
+    extract_bn_ids(args.wsd_dataset_paths, sense_ids_file_path)
 
     build_ngram(ngram_size, ngram_file_path, sense_ids_file_path)
 
