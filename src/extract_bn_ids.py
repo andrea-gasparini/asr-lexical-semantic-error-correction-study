@@ -57,7 +57,7 @@ def extract_bn_ids_raganato(sense_ids_file_path: str, xml_data_path: str, txt_ke
 
 
 def extract_bn_ids_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: str,
-                         write_mode: Literal["a", "w"] = "w") -> None:
+                         write_mode: Literal["a", "w"] = "w", group_by_document: bool = False) -> None:
     """
     Extracts the sense ids' sequences of each sample from a WSD jsonl dataset and writes them to a file,
     one sequence per line.
@@ -71,6 +71,8 @@ def extract_bn_ids_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: str,
             Either a path to a directory containing batches of the dataset or to a single jsonl file.
         write_mode (`Literal["a", "w"]`, optional, defaults to "w"):
             Opening file mode, either "a" for appending or "w" for writing from scratch.
+        group_by_document (`bool`):
+            Whether to group the annotations by documents instead of sentences.
     """
     with open(sense_ids_file_path, write_mode) as file:
 
@@ -80,6 +82,10 @@ def extract_bn_ids_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: str,
             batches = [jsonl_wsd_dataset_path]
         else:
             raise ValueError(f"{jsonl_wsd_dataset_path} is neither a directory nor a file")
+        
+        if group_by_document:
+            document_sense_ids: List[str] = list()
+            document_id = None
 
         for batch in batches:
 
@@ -92,17 +98,35 @@ def extract_bn_ids_jsonl(sense_ids_file_path: str, jsonl_wsd_dataset_path: str,
                 for jsonl_sample in p_bar:
                     jsonl_sample = json.loads(jsonl_sample)
 
-                    assert "labels" in jsonl_sample, f"Sample does not have a valid 'labels' key"
-
-                    labels: List[str] = [sense_id[0] for sense_id in jsonl_sample["labels"]]
+                    labels: List[str] = list()
+                    if "labels" in jsonl_sample:
+                        labels = [sense_id[0] for sense_id in jsonl_sample["labels"]]
+                    elif "annotations" in jsonl_sample:
+                        labels = [sense_id[2] for sense_id in jsonl_sample["annotations"]]
+                    else:
+                        raise ValueError("sample does not have neither a valid 'labels' nor 'annotations' key")
+                    
                     # remove lemma and POS from the id (only keeping "bn:{offset}{wn_pos}")
                     sense_ids = [label.split("#")[0] for label in labels]
-                    joined_sense_ids = " ".join(sense_ids)
+                    
+                    if group_by_document:
 
+                        if document_id is None:
+                            document_id = jsonl_sample["document_id"]
+                        
+                        if document_id == jsonl_sample["document_id"]:
+                            document_sense_ids += sense_ids
+                            continue
+                        else:
+                            sense_ids = [document_id] + document_sense_ids
+                            document_id = jsonl_sample["document_id"]
+                            document_sense_ids = list()
+
+                    joined_sense_ids = " ".join(sense_ids)
                     file.write(f"{joined_sense_ids}\n")
 
 
-def extract_bn_ids(wsd_dataset_paths: List[str], sense_ids_file_path: str) -> None:
+def extract_bn_ids(wsd_dataset_paths: List[str], sense_ids_file_path: str, group: bool = False) -> None:
     """
     Extracts the BabelNet ids' sequences of each sample from the given WSD datasets and writes them to a file, one per line.
 
@@ -112,6 +136,8 @@ def extract_bn_ids(wsd_dataset_paths: List[str], sense_ids_file_path: str) -> No
             jsonl batches of the dataset.
         sense_ids_file_path (`str`):
             Path to the directory in which to save the file with the extracted BabelNet ids.
+        group (`bool`):
+            Whether to group the annotations by documents instead of sentences.
     """
     for i in range(len(wsd_dataset_paths)):
 
@@ -119,7 +145,7 @@ def extract_bn_ids(wsd_dataset_paths: List[str], sense_ids_file_path: str) -> No
         write_mode = "a" if i > 0 else "w"
 
         if os.path.isfile(dataset_path) or ext_is_in_dir(".jsonl", dataset_path, "all"):
-            extract_bn_ids_jsonl(sense_ids_file_path, dataset_path, write_mode)
+            extract_bn_ids_jsonl(sense_ids_file_path, dataset_path, write_mode, group)
 
         elif (len(os.listdir(dataset_path)) == 2 and ext_is_in_dir(".data.xml", dataset_path)
                 and ext_is_in_dir(".key.txt", dataset_path)):
@@ -136,10 +162,12 @@ def parse_args() -> argparse.Namespace:
     # required
     parser.add_argument("-d", "--wsd-dataset-paths", type=str, nargs="+", required=True)
     parser.add_argument("-o", "--sense-ids-path", type=str, required=True)
+    # optional + not required
+    parser.add_argument("-g", "--group", action="store_true", default=False)
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    extract_bn_ids(args.wsd_dataset_paths, args.sense_ids_path)
+    extract_bn_ids(args.wsd_dataset_paths, args.sense_ids_path, args.group)
