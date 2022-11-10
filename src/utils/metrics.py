@@ -1,6 +1,7 @@
 import json
 import math
 from collections import Counter
+from itertools import combinations
 from functools import cache
 from typing import Dict, List, Optional
 
@@ -42,12 +43,15 @@ class PointwiseMutualInformation:
         with open(self.source_file_path) as source_file:
             for line in tqdm(source_file, total=get_num_lines(self.source_file_path)):
                 tokens = line.split(" ")
-                for i, token in enumerate(tokens):
+
+                for token in tokens:
                     self.unigram_frequences[token] += 1
-                    if len(tokens) > i + 1:
-                        self.bigram_frequences[f"{token} {tokens[i + 1]}"] += 1
-                        # to keep PMI symmetric
-                        self.bigram_frequences[f"{tokens[i + 1]} {token}"] += 1
+
+                for token1, token2 in combinations(tokens, 2):
+                    self.bigram_frequences[f"{token1} {token2}"] += 1
+                    # to keep PMI symmetric
+                    if token1 != token2:
+                        self.bigram_frequences[f"{token2} {token1}"] += 1
 
     @property
     def __serializable_attrs(self) -> Dict:
